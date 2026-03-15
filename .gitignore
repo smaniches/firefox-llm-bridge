@@ -1,0 +1,29 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Packages (we don't use any, but just in case)
+node_modules/
+package-lock.json
+
+# Secrets (should never exist, but safety net)
+*.env
+.env.*
+secrets.json
+
+# Build artifacts
+*.zip
+*.xpi
+*.tar.gz
+web-ext-artifacts/
+
+# Competitive analysis and business docs (do not belong in repo)
+*.pdf

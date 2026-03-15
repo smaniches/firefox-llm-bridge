@@ -1,0 +1,87 @@
+{
+  "manifest_version": 3,
+  "name": "Firefox LLM Bridge",
+  "version": "0.2.0",
+  "description": "The first AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs.",
+  "author": "Santiago Maniches / TOPOLOGICA LLC",
+  "homepage_url": "https://topologica.app",
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "bridge@topologica.ai",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "hostnames": [],
+        "purposes": ["functionality"],
+        "notes": "Page content is sent only to the user-configured LLM provider (Ollama local, Anthropic, OpenAI, or Google). No data is collected by the extension developer. API keys are stored locally."
+      }
+    }
+  },
+
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "scripting",
+    "storage",
+    "contextMenus",
+    "notifications",
+    "webNavigation"
+  ],
+
+  "optional_permissions": [
+    "webRequest",
+    "nativeMessaging"
+  ],
+
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*"
+  },
+
+  "background": {
+    "scripts": ["background/background.js"],
+    "type": "module"
+  },
+
+  "sidebar_action": {
+    "default_title": "Firefox LLM Bridge",
+    "default_panel": "sidebar/sidebar.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/sensor.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["content/actor.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
