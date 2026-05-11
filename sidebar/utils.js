@@ -21,6 +21,7 @@ export const TOOL_ICONS = Object.freeze({
   press_key: "⌨",
   drag_drop: "✋",
   upload_file: "📎",
+  download_file: "💾",
   list_tabs: "🗂",
   switch_tab: "🔀",
   screenshot_for_vision: "🔍",
@@ -111,6 +112,8 @@ export function summarize(tool, input) {
       return "(current window)";
     case "screenshot_for_vision":
       return "(image to next turn)";
+    case "download_file":
+      return input.url ? `↓ ${safeHostname(input.url)}` : "";
     default:
       return "";
   }

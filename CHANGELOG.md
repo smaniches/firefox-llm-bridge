@@ -6,6 +6,70 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-11
+
+### Added — capability
+
+- **Streaming responses** end-to-end across all four providers:
+  - Anthropic: native Messages-API SSE (content_block_start /
+    content_block_delta with text_delta + input_json_delta).
+  - OpenAI: Chat Completions SSE with `stream_options.include_usage`.
+  - Google Gemini: `streamGenerateContent?alt=sse`.
+  - Ollama: native NDJSON over `/v1/chat/completions`.
+    Each provider's `call(...)` accepts an optional `onTextChunk(text)`
+    callback. The agent loop emits `STREAM_START`, `STREAM_DELTA`, and
+    `STREAM_END` events so the sidebar can render the assistant message
+    progressively with a blinking caret.
+- **`download_file` tool** — symmetric counterpart to `upload_file`.
+  Initiates a real `browser.downloads.download({ url, filename })`.
+- **Conversation persistence.** Conversation history, cost totals, and
+  turn counter are saved to `browser.storage.local.conversationState`
+  after every agent loop and restored on extension load. `CLEAR_HISTORY`
+  wipes both memory and storage.
+- **Per-session cost tracker.**
+  - New `background/lib/pricing.js` with USD-per-million-token rates for
+    all 10 cloud models (Ollama is always $0).
+  - Each provider's response now carries a canonical
+    `{ promptTokens, completionTokens }` usage object.
+  - Background accumulates a running `sessionUsd` total; the sidebar
+    header shows a cost chip (auto-hidden at $0).
+  - Cost surfaces in `STATUS` and `STREAM_END` events.
+- **E2E test skeleton.** Playwright + `web-ext run` smoke test under
+  `tests/e2e/` with a shared fixture that launches Firefox in a
+  throwaway profile per test. Runs via `npm run test:e2e`. Unit suite
+  remains the default `npm test`.
+- **AMO listing assets** scaffold under `assets/store/`:
+  `AMO_LISTING.md` (canonical copy), `screenshots/README.md` (shot list +
+  capture process), `promotional/README.md` (hero / social-preview
+  specs).
+
+### Added — shared infrastructure
+
+- `background/lib/stream.js` — SSE + NDJSON parsers with a `makeStreamResponse`
+  helper for deterministic tests.
+- `background/lib/pricing.js` — pricing table, cost computation, cost
+  formatting, and usage normalization across the four providers' usage
+  field conventions.
+
+### Changed
+
+- All four provider modules' `call()` signature now takes optional
+  `endpoint` (position 7, ignored by cloud providers) and `onTextChunk`
+  (position 8). Existing 6-arg call sites continue to work unchanged.
+- `manifest.json` adds the `downloads` permission and bumps version.
+- The non-streaming response path now carries a normalized `usage`
+  object alongside `content` / `stop_reason`.
+
+### Quality
+
+- 600+ tests, **100% coverage** on lines / branches / functions /
+  statements across every file in `background/`, `content/`, `sidebar/`,
+  `options/`.
+- New test modules: `tests/lib/stream.test.js`, `tests/lib/pricing.test.js`.
+- Provider streaming paths fully covered for all four backends including
+  every edge case (malformed JSON in SSE, missing usage, missing delta,
+  tool_call arguments rebuilt from partial fragments, etc.).
+
 ## [0.4.1] - 2026-05-11
 
 ### Added
@@ -166,7 +230,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `data_collection_permissions` declared in manifest per Firefox November 2025 requirement
 - Explicit `content_security_policy` to permit `http://localhost` for Ollama (works around the MV3 default that upgrades HTTP to HTTPS)
 
-[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.2.0...v0.3.0

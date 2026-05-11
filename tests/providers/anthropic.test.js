@@ -172,6 +172,299 @@ describe("anthropic provider", () => {
     });
   });
 
+  describe("call (streaming)", () => {
+    function sseResponse(events) {
+      const lines = events.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`);
+      return Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              const enc = new TextEncoder();
+              for (const l of lines) controller.enqueue(enc.encode(l));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        ),
+      );
+    }
+
+    it("invokes onTextChunk for every text_delta and reconstructs content", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            event: "message_start",
+            data: { type: "message_start", message: { usage: { input_tokens: 10 } } },
+          },
+          {
+            event: "content_block_start",
+            data: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "text", text: "" },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "text_delta", text: "Hello" },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "text_delta", text: " world" },
+            },
+          },
+          { event: "content_block_stop", data: { type: "content_block_stop", index: 0 } },
+          {
+            event: "message_delta",
+            data: {
+              type: "message_delta",
+              delta: { stop_reason: "end_turn" },
+              usage: { output_tokens: 5 },
+            },
+          },
+          { event: "message_stop", data: { type: "message_stop" } },
+        ]),
+      );
+
+      const chunks = [];
+      const r = await anthropic.call(
+        "k",
+        "claude-sonnet-4-20250514",
+        "s",
+        [{ role: "user", content: "hi" }],
+        [],
+        null,
+        undefined,
+        (t) => chunks.push(t),
+      );
+      expect(chunks).toEqual(["Hello", " world"]);
+      expect(r.content).toEqual([{ type: "text", text: "Hello world" }]);
+      expect(r.stop_reason).toBe("end_turn");
+      expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 5 });
+    });
+
+    it("rebuilds a streamed tool_use block from input_json_delta chunks", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            event: "content_block_start",
+            data: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "tool_use", id: "tu_1", name: "click", input: {} },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "input_json_delta", partial_json: '{"sel' },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "input_json_delta", partial_json: 'ector":"#x"}' },
+            },
+          },
+          { event: "content_block_stop", data: { type: "content_block_stop", index: 0 } },
+          {
+            event: "message_delta",
+            data: { type: "message_delta", delta: { stop_reason: "tool_use" } },
+          },
+        ]),
+      );
+
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0]).toEqual({
+        type: "tool_use",
+        id: "tu_1",
+        name: "click",
+        input: { selector: "#x" },
+      });
+      expect(r.stop_reason).toBe("tool_use");
+    });
+
+    it("recovers from a malformed tool_use JSON buffer", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            event: "content_block_start",
+            data: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "tool_use", id: "x", name: "y", input: {} },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "input_json_delta", partial_json: "not json" },
+            },
+          },
+          { event: "content_block_stop", data: { type: "content_block_stop", index: 0 } },
+        ]),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0].input).toEqual({});
+    });
+
+    it("silently skips SSE events whose data is not parseable JSON", async () => {
+      // Build a raw SSE response with one event whose `data` is not JSON,
+      // then a valid event after it. Only the second should affect output.
+      const enc = new TextEncoder();
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(enc.encode("data: not-json\n\n"));
+          controller.enqueue(
+            enc.encode(
+              'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+            ),
+          );
+          controller.enqueue(
+            enc.encode(
+              'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+      globalThis.fetch.mockResolvedValueOnce(
+        new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0]).toEqual({ type: "text", text: "ok" });
+    });
+
+    it("silently skips non-JSON SSE data and unknown event types", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          { event: "message", data: "[DONE]" },
+          { event: "ping", data: { type: "ping" } },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "text_delta", text: "x" },
+            },
+          },
+        ]),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      // delta arrived but its block_start was missing — block is undefined,
+      // accumulator quietly skips. Result has no content.
+      expect(r.content).toEqual([]);
+    });
+
+    it("ignores [DONE] sentinels in SSE data", async () => {
+      // Build raw SSE to send `data: [DONE]` literally (not JSON-quoted)
+      const enc = new TextEncoder();
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(enc.encode("data: [DONE]\n\n"));
+          controller.enqueue(
+            enc.encode(
+              'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+            ),
+          );
+          controller.enqueue(
+            enc.encode(
+              'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+      globalThis.fetch.mockResolvedValueOnce(
+        new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0].text).toBe("ok");
+    });
+
+    it("handles message_start without usage and message_delta without output_tokens", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          { event: "message_start", data: { type: "message_start", message: {} } },
+          {
+            event: "message_delta",
+            data: { type: "message_delta", delta: { stop_reason: "end_turn" } },
+          },
+        ]),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.usage).toEqual({ promptTokens: 0, completionTokens: 0 });
+    });
+
+    it("handles message_start with an empty usage object (input_tokens missing)", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          { event: "message_start", data: { type: "message_start", message: { usage: {} } } },
+        ]),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.usage.promptTokens).toBe(0);
+    });
+
+    it("handles message_start with no message field at all", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([{ event: "message_start", data: { type: "message_start" } }]),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.usage.promptTokens).toBe(0);
+    });
+
+    it("handles message_delta with no delta field and no usage", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([{ event: "message_delta", data: { type: "message_delta" } }]),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.stop_reason).toBe("end_turn");
+    });
+
+    it("input_json_delta without partial_json contributes nothing", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            event: "content_block_start",
+            data: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "tool_use", id: "x", name: "y", input: {} },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta" } },
+          },
+          { event: "content_block_stop", data: { type: "content_block_stop", index: 0 } },
+        ]),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0].input).toEqual({});
+    });
+
+    it("propagates non-200 streaming errors", async () => {
+      globalThis.fetch.mockResolvedValueOnce(fetchResponse("nope", { ok: false, status: 401 }));
+      await expect(
+        anthropic.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toThrow(/Anthropic API 401/);
+    });
+  });
+
   describe("buildToolResultMessage", () => {
     it("wraps results in a user-role tool_result message", () => {
       const msg = anthropic.buildToolResultMessage([

@@ -1,6 +1,6 @@
 {
   "name": "firefox-llm-bridge",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "description": "The first AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs.",
   "author": {
@@ -25,18 +25,20 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
     "check": "npm run lint && npm run lint:webext && npm run typecheck && npm run test:coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "lint:webext": "web-ext lint --source-dir . --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig'",
+    "lint:webext": "web-ext lint --source-dir . --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'assets/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'playwright.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig'",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig' 'CLAUDE.md'",
+    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'assets/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'playwright.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig' 'CLAUDE.md'",
     "dev": "web-ext run --source-dir . --browser-console"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
+    "@playwright/test": "^1.50.0",
     "@types/firefox-webext-browser": "^120.0.4",
     "@vitest/coverage-v8": "^3.0.4",
     "eslint": "^9.18.0",

@@ -87,9 +87,18 @@ function resolveModel(stored, models) {
  * @param {Array} messages - Conversation history in unified format
  * @param {Array} tools - Browser tool definitions (provider-agnostic)
  * @param {AbortSignal} signal - Abort signal for cancellation
- * @returns {Object} Normalized response: { content: [...], stop_reason: "end_turn"|"tool_use" }
+ * @param {(text: string) => void} [onTextChunk] - Optional streaming
+ *   callback. When provided, the provider uses its streaming API and
+ *   invokes this for each text delta as it arrives. The final returned
+ *   value still carries the fully reconstructed content; the callback is
+ *   purely additive.
+ * @returns {Promise<{
+ *   content: Array<object>,
+ *   stop_reason: "end_turn" | "tool_use",
+ *   usage?: { promptTokens: number, completionTokens: number },
+ * }>}
  */
-export async function callLLM(systemPrompt, messages, tools, signal) {
+export async function callLLM(systemPrompt, messages, tools, signal, onTextChunk) {
   const config = await getActiveConfig();
 
   if (!config) {
@@ -98,17 +107,36 @@ export async function callLLM(systemPrompt, messages, tools, signal) {
 
   const { provider, apiKey, model, endpoint } = config;
 
-  // Validate API key for cloud providers
   if (provider.requiresKey && !apiKey) {
     throw new Error(`${provider.name} requires an API key. Add one in extension settings.`);
   }
 
-  // Ollama passes endpoint as extra argument
-  if (provider.id === "ollama") {
-    return await provider.call(apiKey, model, systemPrompt, messages, tools, signal, endpoint);
-  }
+  // All provider call() signatures take (apiKey, model, systemPrompt, messages,
+  // tools, signal, endpoint?, onTextChunk?). Cloud providers ignore endpoint;
+  // Ollama uses it. Both honour onTextChunk for streaming.
+  return await provider.call(
+    apiKey,
+    model,
+    systemPrompt,
+    messages,
+    tools,
+    signal,
+    provider.id === "ollama" ? endpoint : undefined,
+    onTextChunk,
+  );
+}
 
-  return await provider.call(apiKey, model, systemPrompt, messages, tools, signal);
+/**
+ * Resolve a model id to its current pricing rate. Returned object includes the
+ * provider's `id` for routing the cost into the right per-provider bucket.
+ * Returns null when no pricing data is registered for the model.
+ *
+ * @param {string} model
+ */
+export async function getActiveModel() {
+  const config = await getActiveConfig();
+  if (!config) return null;
+  return { providerId: config.provider.id, model: config.model };
 }
 
 /**

@@ -218,6 +218,163 @@ describe("openai provider", () => {
     });
   });
 
+  describe("call (streaming)", () => {
+    function sseResponse(events) {
+      const lines = events.map((e) => `data: ${typeof e === "string" ? e : JSON.stringify(e)}\n\n`);
+      return Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              const enc = new TextEncoder();
+              for (const l of lines) controller.enqueue(enc.encode(l));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        ),
+      );
+    }
+
+    it("streams text deltas and returns reconstructed content", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          { choices: [{ delta: { content: "Hel" } }] },
+          { choices: [{ delta: { content: "lo" } }] },
+          { choices: [{ delta: {}, finish_reason: "stop" }] },
+          "[DONE]",
+        ]),
+      );
+
+      const chunks = [];
+      const r = await openai.call(
+        "sk-x",
+        "gpt-4o",
+        "sys",
+        [{ role: "user", content: "hi" }],
+        [],
+        null,
+        undefined,
+        (t) => chunks.push(t),
+      );
+      expect(chunks).toEqual(["Hel", "lo"]);
+      expect(r.content).toEqual([{ type: "text", text: "Hello" }]);
+      expect(r.stop_reason).toBe("end_turn");
+    });
+
+    it("reconstructs a streamed tool_call from delta fragments", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    { index: 0, id: "c1", function: { name: "click", arguments: '{"sel' } },
+                  ],
+                },
+              },
+            ],
+          },
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ index: 0, function: { arguments: '":"#x"}' } }],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          },
+        ]),
+      );
+
+      const r = await openai.call("k", "gpt-4o", "s", [], [], null, undefined, () => {});
+      expect(r.stop_reason).toBe("tool_use");
+      expect(r.content[0]).toEqual({
+        type: "tool_use",
+        id: "c1",
+        name: "click",
+        input: { sel: "#x" },
+      });
+    });
+
+    it("emits an empty input when tool_call args fail to JSON.parse", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    { index: 0, id: "c", function: { name: "n", arguments: "not json" } },
+                  ],
+                },
+              },
+            ],
+          },
+        ]),
+      );
+      const r = await openai.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0].input).toEqual({});
+    });
+
+    it("ignores non-JSON SSE data and events without choices", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse(["not json", { foo: "bar" }, { choices: [{ delta: { content: "x" } }] }]),
+      );
+      const chunks = [];
+      const r = await openai.call("k", "m", "s", [], [], null, undefined, (t) => chunks.push(t));
+      expect(chunks).toEqual(["x"]);
+      expect(r.content[0].text).toBe("x");
+    });
+
+    it("captures usage from the final chunk", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          { choices: [{ delta: { content: "ok" } }] },
+          { choices: [{ delta: {}, finish_reason: "length" }] },
+          { usage: { prompt_tokens: 7, completion_tokens: 11 } },
+          "[DONE]",
+        ]),
+      );
+      const r = await openai.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.usage).toEqual({ promptTokens: 7, completionTokens: 11 });
+    });
+
+    it("propagates non-200 streaming errors", async () => {
+      globalThis.fetch.mockResolvedValueOnce(fetchResponse("err", { ok: false, status: 500 }));
+      await expect(openai.call("k", "m", "s", [], [], null, undefined, () => {})).rejects.toThrow(
+        /OpenAI API 500/,
+      );
+    });
+
+    it("tolerates a choice without a delta object", async () => {
+      globalThis.fetch.mockReturnValueOnce(sseResponse([{ choices: [{ finish_reason: "stop" }] }]));
+      const r = await openai.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content).toEqual([]);
+      expect(r.stop_reason).toBe("end_turn");
+    });
+
+    it("accumulates fresh tool_call entry when index is not yet seen", async () => {
+      // exercises the `index ?? 0` default and the new-entry path
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ function: { name: "x", arguments: "" } }],
+                },
+              },
+            ],
+          },
+        ]),
+      );
+      const r = await openai.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0]).toMatchObject({ type: "tool_use", name: "x", input: {} });
+    });
+  });
+
   describe("buildToolResultMessage", () => {
     it("stringifies non-string content", () => {
       const msg = openai.buildToolResultMessage([{ tool_use_id: "a", content: { x: 1 } }]);

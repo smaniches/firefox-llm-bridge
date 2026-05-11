@@ -82,6 +82,9 @@ export function makeBrowserMock() {
     scripting: {
       executeScript: vi.fn().mockResolvedValue([]),
     },
+    downloads: {
+      download: vi.fn().mockResolvedValue(1),
+    },
   };
 
   // Expose listener arrays so tests can drive events

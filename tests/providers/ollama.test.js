@@ -317,6 +317,144 @@ describe("ollama provider", () => {
     });
   });
 
+  describe("call (streaming, NDJSON, sovereign path)", () => {
+    function ndjsonResponse(values) {
+      const lines = values.map((v) => JSON.stringify(v) + "\n");
+      return Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              const enc = new TextEncoder();
+              for (const l of lines) controller.enqueue(enc.encode(l));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/x-ndjson" } },
+        ),
+      );
+    }
+
+    it("streams text deltas across line-delimited chunks", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        ndjsonResponse([
+          { choices: [{ delta: { content: "Hel" } }] },
+          { choices: [{ delta: { content: "lo" } }] },
+          { choices: [{ delta: {}, finish_reason: "stop" }] },
+        ]),
+      );
+
+      const chunks = [];
+      const r = await ollama.call(
+        null,
+        "llama3.1",
+        "sys",
+        [{ role: "user", content: "hi" }],
+        [],
+        null,
+        undefined,
+        (t) => chunks.push(t),
+      );
+      expect(chunks).toEqual(["Hel", "lo"]);
+      expect(r.content[0]).toEqual({ type: "text", text: "Hello" });
+      expect(r.stop_reason).toBe("end_turn");
+    });
+
+    it("reconstructs a streamed tool_call from delta fragments", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        ndjsonResponse([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    { index: 0, id: "c1", function: { name: "click", arguments: '{"sel' } },
+                  ],
+                },
+              },
+            ],
+          },
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ index: 0, function: { arguments: '":"#x"}' } }],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          },
+        ]),
+      );
+      const r = await ollama.call(null, "m", "s", [], [], null, undefined, () => {});
+      expect(r.stop_reason).toBe("tool_use");
+      expect(r.content[0]).toEqual({
+        type: "tool_use",
+        id: "c1",
+        name: "click",
+        input: { sel: "#x" },
+      });
+    });
+
+    it("emits empty input when streamed tool args fail to parse", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        ndjsonResponse([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ index: 0, id: "x", function: { name: "n", arguments: "nope" } }],
+                },
+              },
+            ],
+          },
+        ]),
+      );
+      const r = await ollama.call(null, "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0].input).toEqual({});
+    });
+
+    it("captures usage when present in the final chunk", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        ndjsonResponse([
+          { choices: [{ delta: { content: "ok" } }] },
+          {
+            usage: { prompt_tokens: 3, completion_tokens: 4 },
+            choices: [{ delta: {}, finish_reason: "stop" }],
+          },
+        ]),
+      );
+      const r = await ollama.call(null, "m", "s", [], [], null, undefined, () => {});
+      expect(r.usage).toEqual({ promptTokens: 3, completionTokens: 4 });
+    });
+
+    it("tolerates a choice without a delta object", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        ndjsonResponse([{ choices: [{ finish_reason: "stop" }] }]),
+      );
+      const r = await ollama.call(null, "m", "s", [], [], null, undefined, () => {});
+      expect(r.content).toEqual([]);
+    });
+
+    it("skips lines without choices and tolerates an empty tool_call without index", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        ndjsonResponse([
+          { not: "a chat chunk" },
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ function: { name: "x", arguments: "" } }],
+                },
+              },
+            ],
+          },
+        ]),
+      );
+      const r = await ollama.call(null, "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0]).toMatchObject({ type: "tool_use", name: "x", input: {} });
+    });
+  });
+
   describe("buildToolResultMessage", () => {
     it("stringifies non-string content", () => {
       const msg = ollama.buildToolResultMessage([{ tool_use_id: "i", content: { a: 1 } }]);

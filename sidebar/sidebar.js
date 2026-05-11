@@ -34,6 +34,7 @@ const previewToolName = must(document.getElementById("preview-tool-name"));
 const previewToolInput = must(document.getElementById("preview-tool-input"));
 const btnPreviewApprove = must(document.getElementById("btn-preview-approve"));
 const btnPreviewCancel = must(document.getElementById("btn-preview-cancel"));
+const costCounter = must(document.getElementById("cost-counter"));
 
 const state = {
   mode: "chat",
@@ -41,6 +42,8 @@ const state = {
   isRunning: false,
   /** @type {string | null} id of the in-flight TOOL_PREVIEW awaiting a response */
   pendingPreviewId: null,
+  /** @type {{ id: string, el: HTMLElement, text: string } | null} */
+  streaming: null,
 };
 
 const RECONNECT_DELAY_MS = 500;
@@ -64,9 +67,23 @@ function handleMsg(msg) {
         if (msg.modelName) providerLabel.textContent = msg.modelName;
         else if (msg.providerName) providerLabel.textContent = msg.providerName;
       }
+      updateCostCounter(msg.cost);
+      break;
+    case "STREAM_START":
+      beginStreamingMessage(msg.id);
+      break;
+    case "STREAM_DELTA":
+      appendStreamingDelta(msg.id, msg.text);
+      break;
+    case "STREAM_END":
+      finalizeStreamingMessage(msg.id);
+      updateCostCounter(msg.cost);
       break;
     case "ASSISTANT_TEXT":
-      addMessage("assistant", msg.text);
+      // Non-streaming providers (or end-of-turn marker after a stream). When
+      // a stream was just finalized with the same text content we skip the
+      // duplicate; otherwise render the message normally.
+      if (state.streaming === null) addMessage("assistant", msg.text);
       break;
     case "TOOL_USE":
       addToolMessage(msg.tool, msg.input, msg.turn);
@@ -283,6 +300,72 @@ function clearMessages() {
   wrap.appendChild(actions);
   messagesEl.appendChild(wrap);
   bindQuick();
+}
+
+/**
+ * Begin a new streaming assistant message. Creates an empty .msg.msg-assistant
+ * element marked with the .streaming class (which renders the blinking caret),
+ * and stores it on state so subsequent STREAM_DELTA messages can append.
+ *
+ * @param {string} id
+ */
+function beginStreamingMessage(id) {
+  removeWelcome();
+  const div = document.createElement("div");
+  div.className = "msg msg-assistant streaming";
+  div.dataset.streamId = id;
+  messagesEl.appendChild(div);
+  state.streaming = { id, el: div, text: "" };
+  scrollToBottom();
+}
+
+/**
+ * Append a delta chunk to the active streaming message. Re-renders the markdown
+ * after each chunk so formatting appears progressively. Ignores chunks for
+ * stream ids other than the active one (defensive against late deltas).
+ *
+ * @param {string} id
+ * @param {string} text
+ */
+function appendStreamingDelta(id, text) {
+  if (!state.streaming || state.streaming.id !== id) return;
+  state.streaming.text += text;
+  state.streaming.el.innerHTML = renderMd(state.streaming.text);
+  state.streaming.el.classList.add("streaming");
+  scrollToBottom();
+}
+
+/**
+ * Finalize the active streaming message: remove the .streaming class so the
+ * caret stops blinking, and clear state.streaming so subsequent
+ * ASSISTANT_TEXT messages (for non-streaming providers) render normally.
+ *
+ * @param {string} id
+ */
+function finalizeStreamingMessage(id) {
+  if (!state.streaming || state.streaming.id !== id) return;
+  state.streaming.el.classList.remove("streaming");
+  if (state.streaming.text.length === 0) {
+    // Empty stream (assistant turn was entirely tool calls). Drop the
+    // placeholder so we don't leave a blank bubble.
+    state.streaming.el.remove();
+  }
+  state.streaming = null;
+}
+
+/**
+ * Update the cost counter chip in the status bar. Hides itself when cost is
+ * "$0.00" or unset so users without a paid provider don't see a stale chip.
+ *
+ * @param {string | undefined} cost
+ */
+function updateCostCounter(cost) {
+  if (!cost || cost === "$0.00") {
+    costCounter.classList.add("hidden");
+    return;
+  }
+  costCounter.textContent = cost;
+  costCounter.classList.remove("hidden");
 }
 
 function scrollToBottom() {
