@@ -698,6 +698,27 @@
         return Promise.resolve({ success: true, value: msg.value });
       }
 
+      case "SENSOR_ELEMENT_EXISTS": {
+        if (!msg.selector) return Promise.resolve({ exists: false });
+        try {
+          const el = document.querySelector(msg.selector);
+          return Promise.resolve({ exists: el !== null });
+        } catch (_e) {
+          return Promise.resolve({ exists: false });
+        }
+      }
+
+      case "ACTION_EXECUTE_SCRIPT": {
+        try {
+          // eslint-disable-next-line no-new-func
+          const result = new Function(`return (${msg.code})`)();
+          const serialised = result === undefined ? null : result;
+          return Promise.resolve({ success: true, result: serialised });
+        } catch (err) {
+          return Promise.resolve({ error: String(err) });
+        }
+      }
+
       case "PING":
         return Promise.resolve({ alive: true });
 

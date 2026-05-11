@@ -247,7 +247,7 @@ describe("anthropic provider", () => {
       expect(chunks).toEqual(["Hello", " world"]);
       expect(r.content).toEqual([{ type: "text", text: "Hello world" }]);
       expect(r.stop_reason).toBe("end_turn");
-      expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 5 });
+      expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 0 });
     });
 
     it("rebuilds a streamed tool_use block from input_json_delta chunks", async () => {
@@ -406,7 +406,7 @@ describe("anthropic provider", () => {
         ]),
       );
       const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
-      expect(r.usage).toEqual({ promptTokens: 0, completionTokens: 0 });
+      expect(r.usage).toEqual({ promptTokens: 0, completionTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 });
     });
 
     it("handles message_start with an empty usage object (input_tokens missing)", async () => {
@@ -479,6 +479,248 @@ describe("anthropic provider", () => {
         content: "ok",
       });
       expect(msg.content[1].tool_use_id).toBe("def");
+    });
+  });
+
+  describe("prompt caching", () => {
+    it("sends anthropic-beta prompt-caching-1 header", async () => {
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse({ content: [], stop_reason: "end_turn" }),
+      );
+      await anthropic.call("sk-ant-key", "m", "sys", [], [], null);
+      const [, init] = globalThis.fetch.mock.calls[0];
+      expect(init.headers["anthropic-beta"]).toBe("prompt-caching-1");
+    });
+
+    it("wraps system prompt as structured array with cache_control", async () => {
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse({ content: [], stop_reason: "end_turn" }),
+      );
+      await anthropic.call("sk-ant-key", "m", "Be helpful", [], [], null);
+      const [, init] = globalThis.fetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.system).toEqual([
+        { type: "text", text: "Be helpful", cache_control: { type: "ephemeral" } },
+      ]);
+    });
+
+    it("adds cache_control to the last formatted tool", () => {
+      const tools = [
+        { name: "click", description: "Click", input_schema: { type: "object", properties: {} } },
+        { name: "type", description: "Type", input_schema: { type: "object", properties: {} } },
+      ];
+      const formatted = anthropic.formatTools(tools);
+      expect(formatted[0].cache_control).toBeUndefined();
+      expect(formatted[1].cache_control).toEqual({ type: "ephemeral" });
+    });
+
+    it("returns cache token counts in non-streaming usage", async () => {
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse({
+          content: [{ type: "text", text: "hi" }],
+          stop_reason: "end_turn",
+          usage: {
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_creation_input_tokens: 80,
+            cache_read_input_tokens: 40,
+          },
+        }),
+      );
+      const res = await anthropic.call("k", "m", "s", [], [], null);
+      expect(res.usage.cacheCreationTokens).toBe(80);
+      expect(res.usage.cacheReadTokens).toBe(40);
+      expect(res.usage.promptTokens).toBe(100);
+      expect(res.usage.completionTokens).toBe(20);
+    });
+
+    it("returns zero cache tokens when absent from non-streaming usage", async () => {
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse({
+          content: [],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 5, output_tokens: 3 },
+        }),
+      );
+      const res = await anthropic.call("k", "m", "s", [], [], null);
+      expect(res.usage.cacheCreationTokens).toBe(0);
+      expect(res.usage.cacheReadTokens).toBe(0);
+    });
+  });
+
+  describe("extended thinking", () => {
+    it("includes thinking block and raised max_tokens when extendedThinking is true", async () => {
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse({ content: [], stop_reason: "end_turn" }),
+      );
+      await anthropic.call("k", "m", "s", [], [], null, undefined, undefined, {
+        extendedThinking: true,
+        thinkingBudget: 5000,
+      });
+      const [, init] = globalThis.fetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 5000 });
+      expect(body.max_tokens).toBeGreaterThanOrEqual(6000);
+    });
+
+    it("uses default thinkingBudget of 8000 when none supplied", async () => {
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse({ content: [], stop_reason: "end_turn" }),
+      );
+      await anthropic.call("k", "m", "s", [], [], null, undefined, undefined, {
+        extendedThinking: true,
+      });
+      const [, init] = globalThis.fetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 8000 });
+    });
+
+    it("does not include thinking block when extendedThinking is false/absent", async () => {
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse({ content: [], stop_reason: "end_turn" }),
+      );
+      await anthropic.call("k", "m", "s", [], [], null);
+      const [, init] = globalThis.fetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.thinking).toBeUndefined();
+    });
+  });
+
+  describe("call (streaming) — thinking blocks", () => {
+    function sseResponse(events) {
+      const lines = events.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`);
+      return Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              const enc = new TextEncoder();
+              for (const l of lines) controller.enqueue(enc.encode(l));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        ),
+      );
+    }
+
+    it("captures thinking blocks and does NOT forward to onTextChunk", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            event: "content_block_start",
+            data: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "thinking" },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "thinking_delta", thinking: "Let me think..." },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "thinking_delta", thinking: " Done." },
+            },
+          },
+          { event: "content_block_stop", data: { type: "content_block_stop", index: 0 } },
+          {
+            event: "content_block_start",
+            data: {
+              type: "content_block_start",
+              index: 1,
+              content_block: { type: "text", text: "" },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 1,
+              delta: { type: "text_delta", text: "Answer" },
+            },
+          },
+          { event: "content_block_stop", data: { type: "content_block_stop", index: 1 } },
+          {
+            event: "message_delta",
+            data: { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 8 } },
+          },
+        ]),
+      );
+
+      const chunks = [];
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, (t) => chunks.push(t));
+
+      // Thinking delta must NOT reach onTextChunk
+      expect(chunks).toEqual(["Answer"]);
+
+      // Thinking block IS in content array
+      expect(r.content[0]).toEqual({ type: "thinking", thinking: "Let me think... Done." });
+      expect(r.content[1]).toEqual({ type: "text", text: "Answer" });
+    });
+
+    it("handles thinking_delta with no thinking field gracefully", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            event: "content_block_start",
+            data: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "thinking" },
+            },
+          },
+          {
+            event: "content_block_delta",
+            data: {
+              type: "content_block_delta",
+              index: 0,
+              // No `thinking` field — tests the `|| ""` fallback branch
+              delta: { type: "thinking_delta" },
+            },
+          },
+          { event: "content_block_stop", data: { type: "content_block_stop", index: 0 } },
+        ]),
+      );
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0]).toEqual({ type: "thinking", thinking: "" });
+    });
+
+    it("returns cache tokens from message_start in streaming usage", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            event: "message_start",
+            data: {
+              type: "message_start",
+              message: {
+                usage: {
+                  input_tokens: 50,
+                  cache_creation_input_tokens: 30,
+                  cache_read_input_tokens: 20,
+                },
+              },
+            },
+          },
+          {
+            event: "message_delta",
+            data: { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 10 } },
+          },
+        ]),
+      );
+
+      const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.usage.promptTokens).toBe(50);
+      expect(r.usage.cacheCreationTokens).toBe(30);
+      expect(r.usage.cacheReadTokens).toBe(20);
+      expect(r.usage.completionTokens).toBe(10);
     });
   });
 });
