@@ -85,6 +85,9 @@ export function makeBrowserMock() {
     downloads: {
       download: vi.fn().mockResolvedValue(1),
     },
+    windows: {
+      getCurrent: vi.fn().mockResolvedValue({ id: 1 }),
+    },
   };
 
   // Expose listener arrays so tests can drive events

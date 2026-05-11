@@ -637,6 +637,67 @@
           msg.base64Data,
         );
 
+      case "SENSOR_FIND_TEXT": {
+        const needle = msg.text;
+        if (!needle) return Promise.resolve({ error: "No search text." });
+        const compare = msg.caseSensitive ? needle : needle.toLowerCase();
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const matches = [];
+        let node;
+        while ((node = walker.nextNode()) && matches.length < 20) {
+          const src = msg.caseSensitive ? node.textContent : node.textContent.toLowerCase();
+          let idx = src.indexOf(compare);
+          while (idx !== -1 && matches.length < 20) {
+            const matchText = node.textContent.substring(idx, idx + needle.length);
+            let x = 0,
+              y = 0;
+            try {
+              const range = document.createRange();
+              range.setStart(node, idx);
+              range.setEnd(node, idx + needle.length);
+              const rect = range.getBoundingClientRect();
+              x = Math.round(rect.x);
+              y = Math.round(rect.y);
+            } catch (_e) {
+              // Range construction can fail on detached nodes — skip silently.
+            }
+            matches.push({ text: matchText, x, y });
+            idx = src.indexOf(compare, idx + 1);
+          }
+        }
+        return Promise.resolve({ found: matches.length > 0, count: matches.length, matches });
+      }
+
+      case "SENSOR_GET_SELECTION":
+        return Promise.resolve({ text: window.getSelection().toString() });
+
+      case "ACTION_FOCUS": {
+        const el = resolveElement(msg.selector, msg.elementIndex);
+        if (!el) return Promise.resolve({ error: "Element not found", selector: msg.selector });
+        return scrollIntoViewIfNeeded(el).then(() => {
+          el.focus();
+          return {
+            success: true,
+            focused: getLabel(el) || msg.selector || `element[${msg.elementIndex}]`,
+          };
+        });
+      }
+
+      case "ACTION_SET_VALUE": {
+        const el = resolveElement(msg.selector, msg.elementIndex);
+        if (!el) return Promise.resolve({ error: "Element not found", selector: msg.selector });
+        const proto =
+          el.tagName === "TEXTAREA"
+            ? window.HTMLTextAreaElement.prototype
+            : window.HTMLInputElement.prototype;
+        const nativeSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+        if (nativeSetter) nativeSetter.call(el, msg.value);
+        /* v8 ignore next */ else el.value = msg.value;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return Promise.resolve({ success: true, value: msg.value });
+      }
+
       case "PING":
         return Promise.resolve({ alive: true });
 

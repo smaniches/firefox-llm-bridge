@@ -18,6 +18,7 @@ import {
 import { computeCost, formatCost } from "./lib/pricing.js";
 
 const PERSIST_KEY = "conversationState";
+const MEMORY_KEY = "agentMemory";
 
 /**
  * Default ceiling on the in-memory conversation history. Older messages are
@@ -29,6 +30,8 @@ const DEFAULT_MAX_HISTORY = 50;
 const state = {
   conversationHistory: [],
   currentTabId: null,
+  /** Window the sidebar is embedded in — used to scope tab queries and screenshots. */
+  currentWindowId: null,
   isAgentRunning: false,
   abortController: null,
   maxTurns: 25,
@@ -46,6 +49,8 @@ const state = {
   },
   /** Image attached to the next assistant turn (from screenshot_for_vision). */
   pendingVisionImage: null,
+  /** Persistent memory entries — loaded from storage at startup. */
+  memories: [],
 };
 
 const BROWSER_TOOLS = [
@@ -250,6 +255,119 @@ const BROWSER_TOOLS = [
     },
   },
   {
+    name: "remember",
+    description:
+      "Store a fact in persistent memory across sessions. Use for: preferences, frequently visited URLs, usernames (never passwords), workflow patterns, account names, page layouts.",
+    input_schema: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "The information to remember." },
+        key: {
+          type: "string",
+          description: "Optional short label for targeted recall (e.g. 'email-pref', 'home-url').",
+        },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "recall",
+    description:
+      "Search persistent memory for stored information. Call this at the start of every task to surface relevant context.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Keywords to search for in stored memories." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "forget",
+    description: "Remove a specific memory entry by its id (from recall results).",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Memory entry id (first 8 chars of the UUID are shown in recall).",
+        },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "new_tab",
+    description:
+      "Open a new browser tab, optionally navigating to a URL. The agent then operates on the new tab.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Optional URL to open. Defaults to about:blank." },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "close_tab",
+    description: "Close a browser tab. Defaults to the current tab if no tab_id is given.",
+    input_schema: {
+      type: "object",
+      properties: {
+        tab_id: {
+          type: "integer",
+          description: "Tab id to close (from list_tabs). Omit to close the current tab.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "find_on_page",
+    description:
+      "Search for text on the current page. Returns match count and positions of the first matches. Use to confirm text appeared after an action, or to locate content before acting on it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "Text to search for." },
+        case_sensitive: { type: "boolean", description: "Default false." },
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "get_selection",
+    description: "Get the text the user currently has selected on the page.",
+    input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "focus_element",
+    description:
+      "Focus an element without clicking it. Use to activate keyboard-controlled widgets (date pickers, dropdowns, custom menus) before sending key presses.",
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "CSS selector or #id." },
+        element_index: { type: "integer", description: "Index from read_page." },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "set_value",
+    description:
+      "Directly set the value of an input or textarea. Unlike type_text, this bypasses keyboard simulation and works reliably on complex widgets (date pickers, range sliders, hidden inputs controlled by JS frameworks).",
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: { type: "string" },
+        element_index: { type: "integer" },
+        value: { type: "string", description: "Value to set." },
+      },
+      required: ["value"],
+    },
+  },
+  {
     name: "task_complete",
     description: "Signal the task is complete.",
     input_schema: {
@@ -260,20 +378,54 @@ const BROWSER_TOOLS = [
   },
 ];
 
-const SYSTEM_PROMPT = `You are Firefox LLM Bridge, an AI assistant operating inside Mozilla Firefox. You can see and interact with web pages on behalf of the user.
+const SYSTEM_PROMPT = `You are Firefox LLM Bridge, an autonomous AI agent operating inside Mozilla Firefox. You have full browser control and persistent memory across sessions.
+
+CAPABILITIES:
+• Browser: read_page, click_element, type_text, navigate, scroll_page, extract_text, screenshot, wait, go_back, get_tab_info, hover_element, press_key, drag_drop, upload_file, download_file
+• Tabs: list_tabs, switch_tab, new_tab, close_tab
+• Page search: find_on_page, get_selection, focus_element, set_value
+• Vision: screenshot_for_vision (attaches image to next model turn)
+• Memory: remember, recall, forget
 
 WORKFLOW:
-1. Use read_page to understand the current page before acting.
-2. Execute actions one at a time, checking results after each.
-3. If something fails, read_page again to re-assess.
-4. When done, use task_complete with a summary.
+1. RECALL — search memory for relevant context before starting any task.
+2. ORIENT — use get_tab_info or read_page to understand current state.
+3. PLAN — state your approach before multi-step tasks.
+4. ACT — one tool call at a time; verify each result before proceeding.
+5. ADAPT — on failure, re-read the page and adjust. Never repeat the same failed action twice.
+6. REMEMBER — store anything the user would want retained for future sessions.
+7. COMPLETE — call task_complete with a concise summary.
 
-RULES:
-- Always read_page before acting on a new page or after navigation.
-- Prefer element IDs, then specific CSS selectors.
-- Never perform financial transactions or enter passwords without explicit user confirmation.
-- If you encounter a CAPTCHA, stop and ask the user.
-- Be concise.`;
+MEMORY RULES:
+- Use recall at the start of every task.
+- Store: URLs, usernames (never passwords), preferences, workflow patterns, page layouts, account names.
+- Never store passwords, payment details, or sensitive secrets.
+- Use forget when the user explicitly asks you to clear something.
+
+TAB RULES:
+- Use new_tab for parallel research to preserve current context.
+- After new_tab or navigate, wait 1 s then read_page before acting.
+- Use close_tab to clean up finished tabs.
+
+INTERACTION RULES:
+- Prefer element_index (from read_page) over CSS selectors — works in shadow DOM and iframes.
+- Use find_on_page to confirm text appeared after an action.
+- Use screenshot_for_vision when the accessibility tree doesn't match what the user sees.
+- Never execute financial transactions, enter passwords, or perform irreversible destructive actions without explicit user confirmation.
+- Stop and tell the user if you encounter a CAPTCHA, login wall, or blocking ambiguity.`;
+
+/**
+ * Build the system prompt for the current turn. Appends a summary of
+ * stored memories so the model has cross-session context without
+ * consuming a tool call at the start of every turn.
+ */
+function buildSystemPrompt() {
+  if (state.memories.length === 0) return SYSTEM_PROMPT;
+  const lines = state.memories
+    .map((m) => `  [${m.id.slice(0, 8)}]${m.key ? ` (${m.key})` : ""} ${m.content}`)
+    .join("\n");
+  return `${SYSTEM_PROMPT}\n\nPERSISTENT MEMORY (${state.memories.length} entries — reference with recall/forget):\n${lines}`;
+}
 
 // ============================================================
 // TOOL EXECUTION
@@ -281,7 +433,16 @@ RULES:
 
 async function executeTool(toolName, toolInput) {
   const tabId = state.currentTabId;
-  if (!tabId && toolName !== "navigate" && toolName !== "get_tab_info") {
+  const NO_TAB_TOOLS = new Set([
+    "navigate",
+    "get_tab_info",
+    "remember",
+    "recall",
+    "forget",
+    "new_tab",
+    "close_tab",
+  ]);
+  if (!tabId && !NO_TAB_TOOLS.has(toolName)) {
     return { error: "No active tab." };
   }
   try {
@@ -345,7 +506,10 @@ async function executeTool(toolName, toolInput) {
         });
       case "screenshot":
         return {
-          image: await browser.tabs.captureVisibleTab(null, { format: "png", quality: 85 }),
+          image: await browser.tabs.captureVisibleTab(state.currentWindowId, {
+            format: "png",
+            quality: 85,
+          }),
         };
       case "wait":
         await sleep(toolInput.milliseconds || 1000);
@@ -403,7 +567,9 @@ async function executeTool(toolName, toolInput) {
         return r;
       }
       case "list_tabs": {
-        const tabs = await browser.tabs.query({ currentWindow: true });
+        const tabs = await browser.tabs.query(
+          state.currentWindowId ? { windowId: state.currentWindowId } : { currentWindow: true },
+        );
         return {
           tabs: tabs.map((t) => ({
             id: t.id,
@@ -422,7 +588,10 @@ async function executeTool(toolName, toolInput) {
       }
       case "screenshot_for_vision":
         return {
-          image: await browser.tabs.captureVisibleTab(null, { format: "png", quality: 85 }),
+          image: await browser.tabs.captureVisibleTab(state.currentWindowId, {
+            format: "png",
+            quality: 85,
+          }),
           forVision: true,
         };
       case "download_file": {
@@ -431,6 +600,95 @@ async function executeTool(toolName, toolInput) {
           ...(toolInput.filename ? { filename: toolInput.filename } : {}),
         });
         return { success: true, download_id: id, url: toolInput.url };
+      }
+      case "remember": {
+        const entry = {
+          id: crypto.randomUUID(),
+          key: toolInput.key || null,
+          content: toolInput.content,
+          timestamp: Date.now(),
+        };
+        state.memories.push(entry);
+        await saveMemories();
+        return { success: true, id: entry.id, stored: entry.content };
+      }
+      case "recall": {
+        const results = searchMemories(toolInput.query);
+        return { count: results.length, memories: results };
+      }
+      case "forget": {
+        const before = state.memories.length;
+        state.memories = state.memories.filter((m) => m.id !== toolInput.id);
+        await saveMemories();
+        return { success: true, removed: before - state.memories.length };
+      }
+      case "new_tab": {
+        const tab = await browser.tabs.create({
+          url: toolInput.url || "about:blank",
+          ...(state.currentWindowId ? { windowId: state.currentWindowId } : {}),
+        });
+        state.currentTabId = tab.id;
+        if (toolInput.url) {
+          await new Promise((resolve) => {
+            const fn = (details) => {
+              if (details.tabId === tab.id && details.frameId === 0) {
+                browser.webNavigation.onCompleted.removeListener(fn);
+                resolve();
+              }
+            };
+            browser.webNavigation.onCompleted.addListener(fn);
+            setTimeout(() => {
+              browser.webNavigation.onCompleted.removeListener(fn);
+              resolve();
+            }, 15000);
+          });
+        }
+        return { success: true, tab_id: tab.id };
+      }
+      case "close_tab": {
+        const id = toolInput.tab_id ?? state.currentTabId;
+        if (id == null) return { error: "No tab to close." };
+        await browser.tabs.remove(id);
+        if (id === state.currentTabId) {
+          const tabQuery = state.currentWindowId
+            ? { active: true, windowId: state.currentWindowId }
+            : { active: true, currentWindow: true };
+          const [next] = await browser.tabs.query(tabQuery);
+          state.currentTabId = next?.id ?? null;
+        }
+        return { success: true, closed_tab_id: id };
+      }
+      case "find_on_page":
+        return await browser.tabs.sendMessage(tabId, {
+          type: "SENSOR_FIND_TEXT",
+          text: toolInput.text,
+          caseSensitive: toolInput.case_sensitive || false,
+        });
+      case "get_selection":
+        return await browser.tabs.sendMessage(tabId, { type: "SENSOR_GET_SELECTION" });
+      case "focus_element": {
+        if (toolInput.selector == null && toolInput.element_index == null) {
+          return { error: "Tool 'focus_element' requires either 'selector' or 'element_index'." };
+        }
+        const r = await browser.tabs.sendMessage(tabId, {
+          type: "ACTION_FOCUS",
+          selector: toolInput.selector || null,
+          elementIndex: toolInput.element_index ?? null,
+        });
+        return r;
+      }
+      case "set_value": {
+        if (toolInput.selector == null && toolInput.element_index == null) {
+          return { error: "Tool 'set_value' requires either 'selector' or 'element_index'." };
+        }
+        const r = await browser.tabs.sendMessage(tabId, {
+          type: "ACTION_SET_VALUE",
+          selector: toolInput.selector || null,
+          elementIndex: toolInput.element_index ?? null,
+          value: toolInput.value,
+        });
+        await sleep(100);
+        return r;
       }
       case "task_complete":
         return { complete: true, summary: toolInput.summary };
@@ -515,6 +773,37 @@ function persistableHistory(history) {
   return out;
 }
 
+// ============================================================
+// MEMORY
+// ============================================================
+
+/** Load stored memories into state. Called once at module load. */
+async function loadMemories() {
+  try {
+    const stored = await browser.storage.local.get([MEMORY_KEY]);
+    if (Array.isArray(stored[MEMORY_KEY])) state.memories = stored[MEMORY_KEY];
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Persist in-memory memories array to storage. Best-effort. */
+async function saveMemories() {
+  try {
+    await browser.storage.local.set({ [MEMORY_KEY]: state.memories });
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Return memories whose key or content contains the query string (case-insensitive). */
+function searchMemories(query) {
+  const q = query.toLowerCase();
+  return state.memories.filter(
+    (m) => m.content.toLowerCase().includes(q) || (m.key && m.key.toLowerCase().includes(q)),
+  );
+}
+
 /**
  * Restore a previously persisted session into `state`. Called once at module
  * load; missing or malformed data resets to a clean slate.
@@ -575,7 +864,7 @@ function pushPendingVisionImage(history) {
 // AGENT LOOP
 // ============================================================
 
-async function runAgentLoop(userMessage, port) {
+async function runAgentLoop(userMessage, port, windowId) {
   state.isAgentRunning = true;
   state.turnCount = 0;
   state.abortController = new AbortController();
@@ -583,7 +872,9 @@ async function runAgentLoop(userMessage, port) {
   state.pendingPreviews.clear();
   state.pendingVisionImage = null;
 
-  const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
+  state.currentWindowId = windowId || null;
+  const tabQuery = windowId ? { active: true, windowId } : { active: true, currentWindow: true };
+  const [activeTab] = await browser.tabs.query(tabQuery);
   if (activeTab) state.currentTabId = activeTab.id;
 
   state.conversationHistory.push({ role: "user", content: userMessage });
@@ -617,7 +908,7 @@ async function runAgentLoop(userMessage, port) {
       let response;
       try {
         response = await callLLM(
-          SYSTEM_PROMPT,
+          buildSystemPrompt(),
           state.conversationHistory,
           BROWSER_TOOLS,
           state.abortController.signal,
@@ -762,15 +1053,17 @@ async function runAgentLoop(userMessage, port) {
 // CHAT-ONLY MODE
 // ============================================================
 
-async function runChatOnly(userMessage, port) {
+async function runChatOnly(userMessage, port, windowId) {
   state.isAgentRunning = true;
   state.abortController = new AbortController();
   state.policy = await loadPolicy();
+  state.currentWindowId = windowId || null;
 
   let pageContext = "";
   let injectionMatches = [];
   try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const tabQuery = windowId ? { active: true, windowId } : { active: true, currentWindow: true };
+    const [tab] = await browser.tabs.query(tabQuery);
     if (tab) {
       state.currentTabId = tab.id;
       const t = await browser.tabs.sendMessage(tab.id, { type: "SENSOR_EXTRACT_TEXT" });
@@ -814,7 +1107,7 @@ async function runChatOnly(userMessage, port) {
     let r;
     try {
       r = await callLLM(
-        "You are Firefox LLM Bridge. Answer questions about the page or have a general conversation. Be concise.",
+        "You are Firefox LLM Bridge. Answer questions about the current page or have a general conversation. You have access to persistent memory — if you stored relevant facts previously, they are visible in your agent system prompt. Be concise.",
         state.conversationHistory,
         [],
         state.abortController.signal,
@@ -880,7 +1173,7 @@ browser.runtime.onConnect.addListener((port) => {
           return;
         }
         await loadSettings();
-        runAgentLoop(msg.text, port);
+        runAgentLoop(msg.text, port, msg.windowId);
         break;
       case "STOP_AGENT":
         if (state.abortController) state.abortController.abort();
@@ -920,7 +1213,7 @@ browser.runtime.onConnect.addListener((port) => {
       case "CHAT_ONLY":
         if (state.isAgentRunning) return;
         await loadSettings();
-        runChatOnly(msg.text, port);
+        runChatOnly(msg.text, port, msg.windowId);
         break;
       case "PREVIEW_RESPONSE": {
         const resolver = state.pendingPreviews.get(msg.id);
@@ -1001,6 +1294,7 @@ function trimHistory() {
 }
 loadSettings();
 restoreSession();
+loadMemories();
 browser.storage.onChanged.addListener(() => loadSettings());
 
 // `contextMenus.create` throws if the id already exists. That happens when
@@ -1038,6 +1332,11 @@ export {
   state,
   BROWSER_TOOLS,
   SYSTEM_PROMPT,
+  buildSystemPrompt,
+  MEMORY_KEY,
+  loadMemories,
+  saveMemories,
+  searchMemories,
   PERSIST_KEY,
   DEFAULT_MAX_HISTORY,
   executeTool,

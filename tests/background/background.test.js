@@ -63,7 +63,7 @@ describe("module-level side effects", () => {
 });
 
 describe("constants", () => {
-  it("BROWSER_TOOLS contains the eighteen tools (core + v0.4.0 additions)", () => {
+  it("BROWSER_TOOLS contains all tools including v0.5.x additions", () => {
     const names = bridge.BROWSER_TOOLS.map((t) => t.name).sort();
     // Core (v0.2/0.3)
     for (const t of [
@@ -93,11 +93,53 @@ describe("constants", () => {
     ]) {
       expect(names).toContain(t);
     }
+    // v0.5.x additions (memory + sovereign agency tools)
+    for (const t of [
+      "remember",
+      "recall",
+      "forget",
+      "new_tab",
+      "close_tab",
+      "find_on_page",
+      "get_selection",
+      "focus_element",
+      "set_value",
+    ]) {
+      expect(names).toContain(t);
+    }
   });
 
-  it("SYSTEM_PROMPT exists", () => {
+  it("SYSTEM_PROMPT exists and includes memory/tab/capability sections", () => {
     expect(typeof bridge.SYSTEM_PROMPT).toBe("string");
-    expect(bridge.SYSTEM_PROMPT.length).toBeGreaterThan(0);
+    expect(bridge.SYSTEM_PROMPT).toContain("Memory");
+    expect(bridge.SYSTEM_PROMPT).toContain("new_tab");
+  });
+
+  it("buildSystemPrompt returns base prompt when no memories", () => {
+    bridge.state.memories = [];
+    const prompt = bridge.buildSystemPrompt();
+    expect(prompt).toBe(bridge.SYSTEM_PROMPT);
+  });
+
+  it("buildSystemPrompt appends memories when present", () => {
+    bridge.state.memories = [
+      { id: "abc12345-rest", key: "pref", content: "dark mode", timestamp: 1 },
+    ];
+    const prompt = bridge.buildSystemPrompt();
+    expect(prompt).toContain("PERSISTENT MEMORY");
+    expect(prompt).toContain("dark mode");
+    expect(prompt).toContain("(pref)");
+    bridge.state.memories = [];
+  });
+
+  it("buildSystemPrompt omits parenthetical when memory has no key", () => {
+    bridge.state.memories = [
+      { id: "abc12345-rest", key: null, content: "keyless fact", timestamp: 1 },
+    ];
+    const prompt = bridge.buildSystemPrompt();
+    expect(prompt).toContain("keyless fact");
+    expect(prompt).not.toContain("(null)");
+    bridge.state.memories = [];
   });
 });
 
@@ -427,6 +469,16 @@ describe("executeTool", () => {
     expect(r.tabs[0]).toEqual({ id: 1, url: "https://a", title: "A", active: true });
   });
 
+  it("list_tabs scopes query to currentWindowId when set", async () => {
+    bridge.state.currentWindowId = 7;
+    globalThis.browser.tabs.query.mockResolvedValueOnce([
+      { id: 3, url: "https://c", title: "C", active: true },
+    ]);
+    await bridge.executeTool("list_tabs", {});
+    expect(globalThis.browser.tabs.query).toHaveBeenCalledWith({ windowId: 7 });
+    bridge.state.currentWindowId = null;
+  });
+
   it("switch_tab activates tab and updates state", async () => {
     const r = await bridge.executeTool("switch_tab", { tab_id: 42 });
     expect(globalThis.browser.tabs.update).toHaveBeenCalledWith(42, { active: true });
@@ -459,6 +511,273 @@ describe("executeTool", () => {
     globalThis.browser.downloads.download.mockResolvedValueOnce(1);
     await bridge.executeTool("download_file", { url: "https://x/y.pdf" });
     expect(globalThis.browser.downloads.download).toHaveBeenCalledWith({ url: "https://x/y.pdf" });
+  });
+
+  // ── memory tools ──────────────────────────────────────────────────────────
+
+  it("remember stores an entry in state.memories and persists it", async () => {
+    bridge.state.memories = [];
+    const r = await bridge.executeTool("remember", {
+      content: "user likes dark mode",
+      key: "theme",
+    });
+    expect(r.success).toBe(true);
+    expect(typeof r.id).toBe("string");
+    expect(bridge.state.memories).toHaveLength(1);
+    expect(bridge.state.memories[0].key).toBe("theme");
+    expect(bridge.state.memories[0].content).toBe("user likes dark mode");
+    expect(globalThis.browser.storage.local.set).toHaveBeenCalled();
+  });
+
+  it("remember works without a key", async () => {
+    bridge.state.memories = [];
+    const r = await bridge.executeTool("remember", { content: "no key fact" });
+    expect(r.success).toBe(true);
+    expect(bridge.state.memories[0].key).toBeNull();
+  });
+
+  it("recall returns matching memories", async () => {
+    bridge.state.memories = [
+      { id: "aaa-1", key: "theme", content: "dark mode", timestamp: 1 },
+      { id: "bbb-2", key: null, content: "unrelated fact", timestamp: 2 },
+    ];
+    const r = await bridge.executeTool("recall", { query: "dark" });
+    expect(r.count).toBe(1);
+    expect(r.memories[0].id).toBe("aaa-1");
+  });
+
+  it("recall matches on key as well as content", async () => {
+    bridge.state.memories = [
+      { id: "ccc-3", key: "theme", content: "something else", timestamp: 1 },
+    ];
+    const r = await bridge.executeTool("recall", { query: "theme" });
+    expect(r.count).toBe(1);
+  });
+
+  it("recall returns empty when nothing matches", async () => {
+    bridge.state.memories = [{ id: "ddd-4", key: null, content: "xyz", timestamp: 1 }];
+    const r = await bridge.executeTool("recall", { query: "nomatch" });
+    expect(r.count).toBe(0);
+  });
+
+  it("forget removes the matching memory and persists", async () => {
+    bridge.state.memories = [
+      { id: "target-id", key: null, content: "to remove", timestamp: 1 },
+      { id: "keep-id", key: null, content: "keep this", timestamp: 2 },
+    ];
+    const r = await bridge.executeTool("forget", { id: "target-id" });
+    expect(r.success).toBe(true);
+    expect(r.removed).toBe(1);
+    expect(bridge.state.memories).toHaveLength(1);
+    expect(bridge.state.memories[0].id).toBe("keep-id");
+    expect(globalThis.browser.storage.local.set).toHaveBeenCalled();
+  });
+
+  it("forget returns removed:0 when id not found", async () => {
+    bridge.state.memories = [{ id: "other-id", key: null, content: "x", timestamp: 1 }];
+    const r = await bridge.executeTool("forget", { id: "no-such-id" });
+    expect(r.removed).toBe(0);
+    expect(bridge.state.memories).toHaveLength(1);
+  });
+
+  // ── tab management ────────────────────────────────────────────────────────
+
+  it("new_tab creates a tab and updates currentTabId (no URL)", async () => {
+    globalThis.browser.tabs.create = vi.fn().mockResolvedValue({ id: 55 });
+    const r = await bridge.executeTool("new_tab", {});
+    expect(globalThis.browser.tabs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "about:blank" }),
+    );
+    expect(r.tab_id).toBe(55);
+    expect(bridge.state.currentTabId).toBe(55);
+  });
+
+  it("new_tab with URL scopes to currentWindowId and waits for webNavigation", async () => {
+    bridge.state.currentWindowId = 3;
+    globalThis.browser.tabs.create = vi.fn().mockResolvedValue({ id: 56 });
+    vi.useFakeTimers();
+    const p = bridge.executeTool("new_tab", { url: "https://example.com" });
+    // Flush tabs.create microtask so the webNavigation listener is registered
+    await Promise.resolve();
+    // Fire the onCompleted event for the new tab
+    const fn = globalThis.browser.webNavigation.onCompleted.addListener.mock.calls.at(-1)[0];
+    fn({ tabId: 56, frameId: 0 });
+    const r = await p;
+    expect(globalThis.browser.tabs.create).toHaveBeenCalledWith({
+      url: "https://example.com",
+      windowId: 3,
+    });
+    expect(r.tab_id).toBe(56);
+    bridge.state.currentWindowId = null;
+    vi.useRealTimers();
+  });
+
+  it("new_tab with URL falls back to timeout when webNavigation never fires", async () => {
+    globalThis.browser.tabs.create = vi.fn().mockResolvedValue({ id: 57 });
+    vi.useFakeTimers();
+    const p = bridge.executeTool("new_tab", { url: "https://slow.example.com" });
+    await Promise.resolve();
+    vi.advanceTimersByTime(15000);
+    const r = await p;
+    expect(r.tab_id).toBe(57);
+    vi.useRealTimers();
+  });
+
+  it("close_tab removes a specific tab by id", async () => {
+    bridge.state.currentTabId = 10;
+    globalThis.browser.tabs.remove = vi.fn().mockResolvedValue(undefined);
+    const r = await bridge.executeTool("close_tab", { tab_id: 20 });
+    expect(globalThis.browser.tabs.remove).toHaveBeenCalledWith(20);
+    expect(r.closed_tab_id).toBe(20);
+    expect(bridge.state.currentTabId).toBe(10); // unchanged — different tab
+  });
+
+  it("close_tab defaults to current tab and updates currentTabId", async () => {
+    bridge.state.currentTabId = 10;
+    globalThis.browser.tabs.remove = vi.fn().mockResolvedValue(undefined);
+    globalThis.browser.tabs.query.mockResolvedValueOnce([{ id: 9 }]);
+    const r = await bridge.executeTool("close_tab", {});
+    expect(globalThis.browser.tabs.remove).toHaveBeenCalledWith(10);
+    expect(r.closed_tab_id).toBe(10);
+    expect(bridge.state.currentTabId).toBe(9);
+  });
+
+  it("close_tab returns error when no tab is available", async () => {
+    bridge.state.currentTabId = null;
+    const r = await bridge.executeTool("close_tab", {});
+    expect(r.error).toMatch(/No tab/);
+  });
+
+  it("close_tab sets currentTabId to null when no active tab follows", async () => {
+    bridge.state.currentTabId = 10;
+    globalThis.browser.tabs.remove = vi.fn().mockResolvedValue(undefined);
+    globalThis.browser.tabs.query.mockResolvedValueOnce([]); // empty → next is undefined
+    const r = await bridge.executeTool("close_tab", {});
+    expect(r.closed_tab_id).toBe(10);
+    expect(bridge.state.currentTabId).toBeNull();
+  });
+
+  it("close_tab queries with windowId when currentWindowId is set", async () => {
+    bridge.state.currentTabId = 10;
+    bridge.state.currentWindowId = 5;
+    globalThis.browser.tabs.remove = vi.fn().mockResolvedValue(undefined);
+    globalThis.browser.tabs.query.mockResolvedValueOnce([{ id: 8 }]);
+    await bridge.executeTool("close_tab", {});
+    expect(globalThis.browser.tabs.query).toHaveBeenCalledWith({ active: true, windowId: 5 });
+    bridge.state.currentWindowId = null;
+  });
+
+  // ── new sensor-backed tools ───────────────────────────────────────────────
+
+  it("find_on_page sends SENSOR_FIND_TEXT to the content script", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({
+      found: true,
+      count: 2,
+      matches: [],
+    });
+    bridge.state.currentTabId = 1;
+    const r = await bridge.executeTool("find_on_page", { text: "hello", case_sensitive: true });
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "SENSOR_FIND_TEXT",
+      text: "hello",
+      caseSensitive: true,
+    });
+    expect(r.found).toBe(true);
+  });
+
+  it("find_on_page defaults caseSensitive to false when case_sensitive is omitted", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({
+      found: false,
+      count: 0,
+      matches: [],
+    });
+    bridge.state.currentTabId = 1;
+    await bridge.executeTool("find_on_page", { text: "hello" });
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "SENSOR_FIND_TEXT",
+      text: "hello",
+      caseSensitive: false,
+    });
+  });
+
+  it("get_selection sends SENSOR_GET_SELECTION", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ text: "selected text" });
+    bridge.state.currentTabId = 1;
+    const r = await bridge.executeTool("get_selection", {});
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "SENSOR_GET_SELECTION",
+    });
+    expect(r.text).toBe("selected text");
+  });
+
+  it("focus_element sends ACTION_FOCUS", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ success: true });
+    bridge.state.currentTabId = 1;
+    const r = await bridge.executeTool("focus_element", { selector: "#btn" });
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "ACTION_FOCUS",
+      selector: "#btn",
+      elementIndex: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("focus_element sends null selector when omitted", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ success: true });
+    bridge.state.currentTabId = 1;
+    await bridge.executeTool("focus_element", { element_index: 0 });
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "ACTION_FOCUS",
+      selector: null,
+      elementIndex: 0,
+    });
+  });
+
+  it("focus_element returns error when neither selector nor element_index provided", async () => {
+    bridge.state.currentTabId = 1;
+    const r = await bridge.executeTool("focus_element", {});
+    expect(r.error).toMatch(/selector.*element_index|element_index.*selector/i);
+  });
+
+  it("set_value sends ACTION_SET_VALUE and waits", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ success: true });
+    bridge.state.currentTabId = 1;
+    vi.useFakeTimers();
+    const p = bridge.executeTool("set_value", { selector: "#inp", value: "42" });
+    await Promise.resolve(); // flush sendMessage microtask so sleep(100) is registered
+    vi.advanceTimersByTime(100);
+    const r = await p;
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "ACTION_SET_VALUE",
+      selector: "#inp",
+      elementIndex: null,
+      value: "42",
+    });
+    expect(r.success).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("set_value sends null selector when omitted", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ success: true });
+    bridge.state.currentTabId = 1;
+    vi.useFakeTimers();
+    const p = bridge.executeTool("set_value", { element_index: 1, value: "x" });
+    await Promise.resolve();
+    vi.advanceTimersByTime(100);
+    await p;
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "ACTION_SET_VALUE",
+      selector: null,
+      elementIndex: 1,
+      value: "x",
+    });
+    vi.useRealTimers();
+  });
+
+  it("set_value returns error when neither selector nor element_index provided", async () => {
+    bridge.state.currentTabId = 1;
+    const r = await bridge.executeTool("set_value", { value: "42" });
+    expect(r.error).toMatch(/selector.*element_index|element_index.*selector/i);
   });
 });
 
@@ -540,6 +859,63 @@ describe("persistence", () => {
       ]);
       expect(out).toEqual([{ role: "user", content: "ok" }]);
     });
+  });
+
+  // ── memory persistence ─────────────────────────────────────────────────────
+
+  it("loadMemories reads from storage and populates state.memories", async () => {
+    const mems = [{ id: "x", key: "k", content: "c", timestamp: 1 }];
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({ [bridge.MEMORY_KEY]: mems });
+    bridge.state.memories = [];
+    await bridge.loadMemories();
+    expect(bridge.state.memories).toEqual(mems);
+  });
+
+  it("loadMemories is a no-op when storage returns non-array", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({ [bridge.MEMORY_KEY]: null });
+    bridge.state.memories = [];
+    await bridge.loadMemories();
+    expect(bridge.state.memories).toEqual([]);
+  });
+
+  it("loadMemories swallows storage errors", async () => {
+    globalThis.browser.storage.local.get.mockRejectedValueOnce(new Error("quota"));
+    bridge.state.memories = [];
+    await expect(bridge.loadMemories()).resolves.toBeUndefined();
+    expect(bridge.state.memories).toEqual([]);
+  });
+
+  it("saveMemories writes state.memories to storage", async () => {
+    bridge.state.memories = [{ id: "y", key: null, content: "fact", timestamp: 2 }];
+    await bridge.saveMemories();
+    const call = globalThis.browser.storage.local.set.mock.calls.at(-1);
+    expect(call[0][bridge.MEMORY_KEY]).toEqual(bridge.state.memories);
+  });
+
+  it("saveMemories swallows storage errors", async () => {
+    globalThis.browser.storage.local.set.mockRejectedValueOnce(new Error("full"));
+    bridge.state.memories = [];
+    await expect(bridge.saveMemories()).resolves.toBeUndefined();
+  });
+
+  it("searchMemories matches on content (case-insensitive)", () => {
+    bridge.state.memories = [
+      { id: "1", key: null, content: "Dark mode preferred", timestamp: 1 },
+      { id: "2", key: null, content: "unrelated", timestamp: 2 },
+    ];
+    const r = bridge.searchMemories("dark");
+    expect(r).toHaveLength(1);
+    expect(r[0].id).toBe("1");
+  });
+
+  it("searchMemories matches on key (case-insensitive)", () => {
+    bridge.state.memories = [{ id: "3", key: "EmailPref", content: "uses gmail", timestamp: 1 }];
+    expect(bridge.searchMemories("emailpref")).toHaveLength(1);
+  });
+
+  it("searchMemories returns empty array when no match", () => {
+    bridge.state.memories = [{ id: "4", key: null, content: "xyz", timestamp: 1 }];
+    expect(bridge.searchMemories("nomatch")).toHaveLength(0);
   });
 
   it("persistSession writes conversationHistory + cost + turnCount to storage", async () => {
@@ -811,6 +1187,19 @@ describe("runAgentLoop", () => {
   function makePort() {
     return { postMessage: vi.fn() };
   }
+
+  it("scopes the active-tab query to a specific windowId when provided", async () => {
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "text", text: "done" }],
+      stop_reason: "end_turn",
+    });
+    const port = makePort();
+    await bridge.runAgentLoop("hi", port, 42);
+    expect(globalThis.browser.tabs.query).toHaveBeenCalledWith(
+      expect.objectContaining({ active: true, windowId: 42 }),
+    );
+    expect(bridge.state.currentWindowId).toBe(42);
+  });
 
   it("emits ASSISTANT_TEXT and exits on end_turn", async () => {
     providers.callLLM.mockResolvedValueOnce({
@@ -1205,6 +1594,19 @@ describe("runAgentLoop", () => {
 });
 
 describe("runChatOnly", () => {
+  it("scopes the active-tab query to a specific windowId when provided", async () => {
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "text", text: "ok" }],
+      stop_reason: "end_turn",
+    });
+    const port = { postMessage: vi.fn() };
+    await bridge.runChatOnly("q", port, 99);
+    expect(globalThis.browser.tabs.query).toHaveBeenCalledWith(
+      expect.objectContaining({ active: true, windowId: 99 }),
+    );
+    expect(bridge.state.currentWindowId).toBe(99);
+  });
+
   it("includes page context and emits ASSISTANT_TEXT", async () => {
     providers.callLLM.mockResolvedValueOnce({
       content: [{ type: "text", text: "answer" }],

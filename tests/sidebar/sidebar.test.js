@@ -294,7 +294,9 @@ describe("sidebar: send + mode toggle", () => {
     inp.value = "hi";
     inp.dispatchEvent(new Event("input"));
     document.getElementById("btn-send").click();
-    expect(port.postMessage).toHaveBeenCalledWith({ type: "CHAT_ONLY", text: "hi" });
+    expect(port.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "CHAT_ONLY", text: "hi" }),
+    );
   });
 
   it("send button posts a SEND_MESSAGE in agent mode", async () => {
@@ -304,7 +306,9 @@ describe("sidebar: send + mode toggle", () => {
     inp.value = "do it";
     inp.dispatchEvent(new Event("input"));
     document.getElementById("btn-send").click();
-    expect(port.postMessage).toHaveBeenCalledWith({ type: "SEND_MESSAGE", text: "do it" });
+    expect(port.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "SEND_MESSAGE", text: "do it" }),
+    );
   });
 
   it("does not send when input is empty", async () => {

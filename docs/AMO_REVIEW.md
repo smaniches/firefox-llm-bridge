@@ -188,9 +188,9 @@ tests/
 
 ## Contact for Reviewer Questions
 
-- General: hello@topologica.app
-- Security: security@topologica.app
-- Privacy: privacy@topologica.app
+- General: hello@topologica.ai
+- Security: security@topologica.ai
+- Privacy: privacy@topologica.ai
 - Author: Santiago Maniches, ORCID 0009-0005-6480-1987
 
 ## Acknowledgment

@@ -87,14 +87,14 @@ Every permission requested is used and minimized. See
 ## Support
 
 - Source + issues: https://github.com/smaniches/firefox-llm-bridge
-- Security: security@topologica.app (see SECURITY.md)
-- Privacy questions: privacy@topologica.app
-- General: hello@topologica.app
+- Security: security@topologica.ai (see SECURITY.md)
+- Privacy questions: privacy@topologica.ai
+- General: hello@topologica.ai
 
 ## Homepage URL
 
 ```
-https://topologica.app
+https://topologica.ai
 ```
 
 ## Support URL
