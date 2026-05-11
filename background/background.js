@@ -497,29 +497,20 @@ function persistableHistory(history) {
   /** @type {Array<{ role: string, content: string }>} */
   const out = [];
   for (const msg of history) {
-    if (msg.role === "user") {
-      if (typeof msg.content === "string" && msg.content.length > 0) {
-        out.push({ role: "user", content: msg.content });
-      } else if (Array.isArray(msg.content)) {
-        // Mixed user content blocks (e.g. text + image, or text + tool_result)
-        // can still carry user-visible text. Keep the text, drop the rest.
-        const text = msg.content
-          .filter((b) => b && b.type === "text" && typeof b.text === "string")
-          .map((b) => b.text)
-          .join("");
-        if (text.length > 0) out.push({ role: "user", content: text });
-      }
-    } else if (msg.role === "assistant") {
-      if (typeof msg.content === "string" && msg.content.length > 0) {
-        out.push({ role: "assistant", content: msg.content });
-      } else if (Array.isArray(msg.content)) {
-        const text = msg.content
-          .filter((b) => b && b.type === "text" && typeof b.text === "string")
-          .map((b) => b.text)
-          .join("");
-        if (text.length > 0) out.push({ role: "assistant", content: text });
-      }
+    if (msg.role !== "user" && msg.role !== "assistant") continue;
+
+    let text = "";
+    if (typeof msg.content === "string") {
+      text = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      // Keep text blocks; drop image, tool_use, tool_result, and other blobs.
+      text = msg.content
+        .filter((b) => b && b.type === "text" && typeof b.text === "string")
+        .map((b) => b.text)
+        .join("");
     }
+
+    if (text.length > 0) out.push({ role: msg.role, content: text });
   }
   return out;
 }

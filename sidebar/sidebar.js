@@ -72,6 +72,8 @@ function connectPort() {
         // never be filled. Mirrors finalizeStreamingMessage().
         state.streaming.el.remove();
       } else {
+        // Synchronously render any deltas that arrived after the last rAF.
+        renderMdInto(state.streaming.el, state.streaming.text);
         state.streaming.el.classList.remove("streaming");
       }
       state.streaming = null;

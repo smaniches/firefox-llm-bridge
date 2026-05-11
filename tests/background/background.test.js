@@ -525,6 +525,15 @@ describe("persistence", () => {
       expect(bridge.persistableHistory([{ role: "assistant", content: "" }])).toEqual([]);
     });
 
+    it("skips messages with unknown roles (e.g. system, tool)", () => {
+      const out = bridge.persistableHistory([
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "tool", content: "result" },
+        { role: "user", content: "hi" },
+      ]);
+      expect(out).toEqual([{ role: "user", content: "hi" }]);
+    });
+
     it("tolerates null entries inside content arrays", () => {
       const out = bridge.persistableHistory([
         { role: "user", content: [null, { type: "text", text: "ok" }] },
