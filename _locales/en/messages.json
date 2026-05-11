@@ -1,0 +1,18 @@
+{
+  "extensionName": {
+    "message": "Firefox LLM Bridge",
+    "description": "Name of the extension."
+  },
+  "extensionDescription": {
+    "message": "The first AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs.",
+    "description": "Description of the extension shown in about:addons and AMO listing."
+  },
+  "sidebarTitle": {
+    "message": "Firefox LLM Bridge",
+    "description": "Title of the sidebar panel."
+  },
+  "contextMenuExplain": {
+    "message": "Ask LLM Bridge about selection",
+    "description": "Right-click context-menu entry shown on selected text."
+  }
+}
