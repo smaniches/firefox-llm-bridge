@@ -58,9 +58,10 @@ export const openai = {
             formatted.push({
               role: "tool",
               tool_call_id: result.tool_use_id,
-              content: typeof result.content === "string"
-                ? result.content
-                : JSON.stringify(result.content),
+              content:
+                typeof result.content === "string"
+                  ? result.content
+                  : JSON.stringify(result.content),
             });
           }
         } else {
@@ -73,7 +74,10 @@ export const openai = {
       } else if (msg.role === "assistant") {
         // Convert assistant messages with tool_use blocks
         if (Array.isArray(msg.content)) {
-          const textParts = msg.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+          const textParts = msg.content
+            .filter((b) => b.type === "text")
+            .map((b) => b.text)
+            .join("");
           const toolUses = msg.content.filter((b) => b.type === "tool_use");
 
           const assistantMsg = {
@@ -129,7 +133,7 @@ export const openai = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
       signal,
@@ -169,7 +173,7 @@ export const openai = {
         let parsedArgs = {};
         try {
           parsedArgs = JSON.parse(tc.function.arguments);
-        } catch (e) {
+        } catch {
           console.warn("[OpenAI] Failed to parse tool arguments:", tc.function.arguments);
         }
 

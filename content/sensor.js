@@ -6,9 +6,10 @@
  * 1. SENSOR: Extract semantic accessibility map of the page
  * 2. ACTOR: Execute click, type, scroll actions dispatched from background
  *
- * The semantic map is 10x more effective than raw HTML for AI agent comprehension.
- * We walk the DOM extracting ARIA roles, labels, and bounding rects to produce
- * a structured representation that Claude can reason about.
+ * Rather than sending the LLM raw HTML (which is verbose, opaque, and burns
+ * tokens on noise), we walk the DOM and emit a structured map of every
+ * interactive element with ARIA role, label, bounding rect, and CSS selector.
+ * This keeps the model's context focused on actionable nodes.
  */
 
 (() => {
@@ -29,16 +30,34 @@
   // ============================================================
 
   const INTERACTIVE_ROLES = new Set([
-    "button", "link", "textbox", "checkbox", "radio", "combobox",
-    "listbox", "menuitem", "menu", "menubar", "tab", "tablist",
-    "switch", "slider", "spinbutton", "searchbox", "option",
-    "treeitem", "gridcell", "row", "columnheader", "rowheader",
+    "button",
+    "link",
+    "textbox",
+    "checkbox",
+    "radio",
+    "combobox",
+    "listbox",
+    "menuitem",
+    "menu",
+    "menubar",
+    "tab",
+    "tablist",
+    "switch",
+    "slider",
+    "spinbutton",
+    "searchbox",
+    "option",
+    "treeitem",
+    "gridcell",
+    "row",
+    "columnheader",
+    "rowheader",
   ]);
 
   const INTERACTIVE_TAGS = {
     BUTTON: "button",
     A: "link",
-    INPUT: null,  // determined by type
+    INPUT: null, // determined by type
     TEXTAREA: "textbox",
     SELECT: "combobox",
     DETAILS: "button",
@@ -159,15 +178,19 @@
         break;
       }
       if (current.className && typeof current.className === "string") {
-        const classes = current.className.trim().split(/\s+/).filter(c => c && !c.includes(":")).slice(0, 2);
+        const classes = current.className
+          .trim()
+          .split(/\s+/)
+          .filter((c) => c && !c.includes(":"))
+          .slice(0, 2);
         if (classes.length > 0) {
-          part += "." + classes.map(c => CSS.escape(c)).join(".");
+          part += "." + classes.map((c) => CSS.escape(c)).join(".");
         }
       }
       // Add nth-child if needed for uniqueness
       const parent = current.parentElement;
       if (parent) {
-        const siblings = Array.from(parent.children).filter(s => s.tagName === current.tagName);
+        const siblings = Array.from(parent.children).filter((s) => s.tagName === current.tagName);
         if (siblings.length > 1) {
           const idx = siblings.indexOf(current) + 1;
           part += `:nth-of-type(${idx})`;
@@ -184,6 +207,7 @@
     let index = 0;
 
     function walk(node) {
+      /* v8 ignore next */
       if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
 
       const role = inferRole(node);
@@ -342,16 +366,22 @@
 
     // Set value directly
     if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
-      // Use native setter to trigger React/framework listeners
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, "value"
-      )?.set || Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype, "value"
-      )?.set;
+      // Use the native setter on the matching prototype so React/framework
+      // listeners are triggered. Calling the Input setter on a Textarea
+      // (and vice versa) throws "wrong receiver" in strict engines, so we
+      // pick by tag name rather than chaining with `||`.
+      const proto =
+        el.tagName === "TEXTAREA"
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
 
-      if (nativeInputValueSetter) {
-        nativeInputValueSetter.call(el, text);
+      if (nativeSetter) {
+        nativeSetter.call(el, text);
       } else {
+        // Defensive: modern engines always expose the native setter via
+        // Object.getOwnPropertyDescriptor, but keep a direct-assignment
+        // fallback in case a hostile page redefines the prototype property.
         el.value = text;
       }
 
@@ -370,7 +400,7 @@
           keyCode: 13,
           which: 13,
           bubbles: true,
-        })
+        }),
       );
       el.dispatchEvent(
         new KeyboardEvent("keypress", {
@@ -379,7 +409,7 @@
           keyCode: 13,
           which: 13,
           bubbles: true,
-        })
+        }),
       );
       el.dispatchEvent(
         new KeyboardEvent("keyup", {
@@ -388,7 +418,7 @@
           keyCode: 13,
           which: 13,
           bubbles: true,
-        })
+        }),
       );
       // Also submit the form if there is one
       const form = el.closest("form");
@@ -436,7 +466,7 @@
   // MESSAGE HANDLER
   // ============================================================
 
-  browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  browser.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
     switch (msg.type) {
       case "SENSOR_READ":
         return Promise.resolve(buildSemanticMap(msg.includeText));
@@ -453,7 +483,7 @@
           msg.elementIndex,
           msg.text,
           msg.clearFirst,
-          msg.pressEnter
+          msg.pressEnter,
         );
 
       case "ACTION_SCROLL":
@@ -466,5 +496,4 @@
         return Promise.resolve({ error: "Unknown message type" });
     }
   });
-
 })();

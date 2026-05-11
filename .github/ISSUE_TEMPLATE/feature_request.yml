@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest an enhancement
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the [Roadmap](../../docs/ROADMAP.md) before opening — many ideas are already tracked there.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today? Concrete scenario, not "would be nice".
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What change would solve it? An API sketch or a UI mockup helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Where does this live?
+      options:
+        - Content script (sensor / actor)
+        - Background (agent loop, provider router)
+        - Sidebar UI
+        - Options page
+        - New LLM provider
+        - Build / CI / release
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I've read the Roadmap and this isn't a duplicate
+          required: true
+        - label: This is in scope (see "Out of scope" in the Roadmap)
+          required: true

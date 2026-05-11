@@ -47,7 +47,7 @@ export const ollama = {
         name: `${m.name} (${formatSize(m.size)})`,
         default: false,
       }));
-    } catch (e) {
+    } catch {
       return [];
     }
   },
@@ -63,7 +63,7 @@ export const ollama = {
         signal: AbortSignal.timeout(3000),
       });
       return response.ok;
-    } catch (e) {
+    } catch {
       return false;
     }
   },
@@ -95,9 +95,10 @@ export const ollama = {
             formatted.push({
               role: "tool",
               tool_call_id: result.tool_use_id,
-              content: typeof result.content === "string"
-                ? result.content
-                : JSON.stringify(result.content),
+              content:
+                typeof result.content === "string"
+                  ? result.content
+                  : JSON.stringify(result.content),
             });
           }
         } else {
@@ -108,7 +109,10 @@ export const ollama = {
         }
       } else if (msg.role === "assistant") {
         if (Array.isArray(msg.content)) {
-          const textParts = msg.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+          const textParts = msg.content
+            .filter((b) => b.type === "text")
+            .map((b) => b.text)
+            .join("");
           const toolUses = msg.content.filter((b) => b.type === "tool_use");
 
           const assistantMsg = { role: "assistant", content: textParts || null };
@@ -168,8 +172,8 @@ export const ollama = {
       if (e.name === "AbortError") throw e;
       throw new Error(
         "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) " +
-        "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
-        `Tried: ${url}`
+          "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
+          `Tried: ${url}`,
       );
     }
 
@@ -203,10 +207,11 @@ export const ollama = {
       for (const tc of msg.tool_calls) {
         let parsedArgs = {};
         try {
-          parsedArgs = typeof tc.function.arguments === "string"
-            ? JSON.parse(tc.function.arguments)
-            : tc.function.arguments;
-        } catch (e) {
+          parsedArgs =
+            typeof tc.function.arguments === "string"
+              ? JSON.parse(tc.function.arguments)
+              : tc.function.arguments;
+        } catch {
           console.warn("[Ollama] Failed to parse tool arguments:", tc.function.arguments);
         }
 

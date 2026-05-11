@@ -1,0 +1,7 @@
+node_modules
+coverage
+dist
+web-ext-artifacts
+*.min.js
+LICENSE
+NOTICE

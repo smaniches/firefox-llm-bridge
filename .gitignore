@@ -10,20 +10,30 @@ desktop.ini
 *.swo
 *~
 
-# Packages (we don't use any, but just in case)
+# Node / npm (dev tooling only — extension itself has zero runtime deps)
 node_modules/
-package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Test / coverage output
+coverage/
+.nyc_output/
+*.lcov
+
+# Build artifacts
+dist/
+*.zip
+*.xpi
+*.tar.gz
+web-ext-artifacts/
 
 # Secrets (should never exist, but safety net)
 *.env
 .env.*
 secrets.json
-
-# Build artifacts
-*.zip
-*.xpi
-*.tar.gz
-web-ext-artifacts/
+.web-ext-api-key
 
 # Competitive analysis and business docs (do not belong in repo)
 *.pdf

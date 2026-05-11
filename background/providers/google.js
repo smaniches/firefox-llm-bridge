@@ -132,9 +132,13 @@ export const google = {
 
   /**
    * Call Gemini generateContent and return normalized response.
+   *
+   * SECURITY: The API key is passed via the `x-goog-api-key` header instead
+   * of the URL query string. Keys in URLs end up in HTTP server access logs,
+   * proxy logs, and browser history; header values do not.
    */
   async call(apiKey, model, systemPrompt, messages, tools, signal) {
-    const url = `${this.endpoint}/${model}:generateContent?key=${apiKey}`;
+    const url = `${this.endpoint}/${model}:generateContent`;
 
     const body = {
       contents: this.formatMessages(messages),
@@ -155,7 +159,10 @@ export const google = {
 
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
       body: JSON.stringify(body),
       signal,
     });

@@ -2,7 +2,9 @@
 
 ## Project
 
-The first AI browser agent extension for Mozilla Firefox. No other production agentic extension exists for Firefox. Chrome has Claude in Chrome (500K+ installs). Firefox has zero. This fills the gap.
+An open-source AI browser agent for Mozilla Firefox, distributed as a Manifest V3 WebExtension. Built to be auditable: no bundler, no runtime dependencies, no minification, source matches what ships.
+
+Goal: a Firefox-native option for users who want an agentic browser experience without leaving Mozilla.
 
 ## Owner
 
@@ -27,6 +29,7 @@ Multi-model support via provider abstraction. Each provider normalizes to a unif
 ```
 
 Supported providers:
+
 - **Ollama** (local, free): http://localhost:11434/v1/chat/completions (OpenAI-compatible)
 - **Anthropic** (cloud, BYOK): https://api.anthropic.com/v1/messages
 - **OpenAI** (cloud, BYOK): https://api.openai.com/v1/chat/completions

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/smaniches/firefox-llm-bridge/security/advisories/new
+    about: Please report vulnerabilities privately. Do not open a public issue.
+  - name: Question
+    url: https://github.com/smaniches/firefox-llm-bridge/discussions
+    about: Open-ended discussion, "how do I…", design conversations.
