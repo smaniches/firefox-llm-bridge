@@ -53,6 +53,7 @@ describe("module-level side effects", () => {
   it("creates the context menu", () => {
     expect(globalThis.browser.contextMenus.create).toHaveBeenCalledWith(
       expect.objectContaining({ id: "bridge-explain", contexts: ["selection"] }),
+      expect.any(Function),
     );
   });
 
