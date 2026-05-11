@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { TOOL_ICONS, escapeHtml, renderMd, summarize, safeHostname } from "../../sidebar/utils.js";
+import {
+  TOOL_ICONS,
+  escapeHtml,
+  renderMd,
+  renderMdInto,
+  tokenizeMd,
+  summarize,
+  safeHostname,
+} from "../../sidebar/utils.js";
 
 describe("TOOL_ICONS", () => {
   it("covers every tool exposed by the agent", () => {
@@ -210,6 +218,91 @@ describe("summarize", () => {
 
   it("download_file empty when url missing", () => {
     expect(summarize("download_file", {})).toBe("");
+  });
+});
+
+describe("tokenizeMd", () => {
+  it("returns empty for non-string or empty input", () => {
+    expect(tokenizeMd("")).toEqual([]);
+    expect(tokenizeMd(null)).toEqual([]);
+    expect(tokenizeMd(undefined)).toEqual([]);
+  });
+
+  it("emits plain text when there's nothing to mark up", () => {
+    expect(tokenizeMd("hello world")).toEqual([{ kind: "text", value: "hello world" }]);
+  });
+
+  it("recognises **bold**", () => {
+    const toks = tokenizeMd("a **b** c");
+    expect(toks).toEqual([
+      { kind: "text", value: "a " },
+      { kind: "bold", value: "b" },
+      { kind: "text", value: " c" },
+    ]);
+  });
+
+  it("recognises `inline code`", () => {
+    const toks = tokenizeMd("a `x` b");
+    expect(toks.find((t) => t.kind === "code")).toEqual({ kind: "code", value: "x" });
+  });
+
+  it("recognises [text](https://url) and rejects javascript: URIs", () => {
+    expect(tokenizeMd("[a](https://example.com)").find((t) => t.kind === "link")).toEqual({
+      kind: "link",
+      value: "a",
+      href: "https://example.com",
+    });
+    expect(
+      tokenizeMd("[evil](javascript:alert(1))").find((t) => t.kind === "link"),
+    ).toBeUndefined();
+  });
+
+  it("emits br for newlines", () => {
+    const toks = tokenizeMd("a\nb");
+    expect(toks).toEqual([
+      { kind: "text", value: "a" },
+      { kind: "br" },
+      { kind: "text", value: "b" },
+    ]);
+  });
+});
+
+describe("renderMdInto", () => {
+  it("clears parent and renders text-only content", () => {
+    const div = document.createElement("div");
+    div.textContent = "stale";
+    renderMdInto(div, "hello");
+    expect(div.textContent).toBe("hello");
+    // No <strong> / <code> / <a> nodes for plain text.
+    expect(div.querySelector("strong, code, a")).toBeNull();
+  });
+
+  it("renders bold + code + link + br via real DOM nodes", () => {
+    const div = document.createElement("div");
+    renderMdInto(div, "**bold** and `code` and [link](https://example.com)\nnext");
+    expect(div.querySelector("strong").textContent).toBe("bold");
+    expect(div.querySelector("code").textContent).toBe("code");
+    const a = div.querySelector("a");
+    expect(a.href).toBe("https://example.com/");
+    expect(a.target).toBe("_blank");
+    expect(a.rel).toBe("noopener noreferrer");
+    expect(a.textContent).toBe("link");
+    expect(div.querySelector("br")).not.toBeNull();
+  });
+
+  it("escapes < > & properly because we use text nodes", () => {
+    const div = document.createElement("div");
+    renderMdInto(div, "<script>alert(1)</script>");
+    // No real <script> child — the string ends up as text.
+    expect(div.querySelector("script")).toBeNull();
+    expect(div.textContent).toBe("<script>alert(1)</script>");
+  });
+
+  it("rejects javascript: URIs (link not produced)", () => {
+    const div = document.createElement("div");
+    renderMdInto(div, "[evil](javascript:alert(1))");
+    expect(div.querySelector("a")).toBeNull();
+    expect(div.textContent).toBe("[evil](javascript:alert(1))");
   });
 });
 

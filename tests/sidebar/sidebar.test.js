@@ -217,6 +217,50 @@ describe("sidebar: message rendering", () => {
     expect(document.querySelector(".welcome-msg")).toBeTruthy();
     expect(document.querySelectorAll(".msg-assistant").length).toBe(0);
   });
+
+  it("HISTORY_RESTORE repopulates user + assistant messages", async () => {
+    await setup();
+    handleMsg({
+      type: "HISTORY_RESTORE",
+      messages: [
+        { role: "user", text: "first prompt" },
+        { role: "assistant", text: "first reply" },
+        { role: "user", text: "**second**" },
+        { role: "assistant", text: "second reply" },
+      ],
+    });
+    const userMsgs = document.querySelectorAll(".msg-user");
+    const asstMsgs = document.querySelectorAll(".msg-assistant");
+    expect(userMsgs.length).toBe(2);
+    expect(asstMsgs.length).toBe(2);
+    // Markdown is rendered on assistant turns
+    expect(userMsgs[1].textContent).toBe("**second**");
+    expect(asstMsgs[1].textContent).toBe("second reply");
+  });
+
+  it("HISTORY_RESTORE is a no-op for empty or missing messages", async () => {
+    await setup();
+    handleMsg({ type: "HISTORY_RESTORE", messages: [] });
+    handleMsg({ type: "HISTORY_RESTORE" });
+    handleMsg({ type: "HISTORY_RESTORE", messages: null });
+    expect(document.querySelector(".welcome-msg")).toBeTruthy();
+    expect(document.querySelectorAll(".msg-assistant").length).toBe(0);
+  });
+
+  it("HISTORY_RESTORE skips malformed entries", async () => {
+    await setup();
+    handleMsg({
+      type: "HISTORY_RESTORE",
+      messages: [
+        null,
+        { role: "system", text: "ignored" },
+        { role: "user", text: 42 },
+        { role: "assistant", text: "ok" },
+      ],
+    });
+    expect(document.querySelectorAll(".msg-assistant").length).toBe(1);
+    expect(document.querySelectorAll(".msg-user").length).toBe(0);
+  });
 });
 
 describe("sidebar: send + mode toggle", () => {
@@ -362,6 +406,11 @@ describe("sidebar: pending selection", () => {
   });
 });
 
+/** Wait for a rAF flush so the streaming renderer paints. */
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
 describe("sidebar: streaming + cost", () => {
   it("STREAM_START creates a streaming assistant bubble", async () => {
     await setup();
@@ -371,33 +420,62 @@ describe("sidebar: streaming + cost", () => {
     expect(el.dataset.streamId).toBe("s1");
   });
 
-  it("STREAM_DELTA appends to the active streaming message", async () => {
+  it("STREAM_DELTA appends to the active streaming message (rAF-coalesced)", async () => {
     await setup();
     handleMsg({ type: "STREAM_START", id: "s2" });
     handleMsg({ type: "STREAM_DELTA", id: "s2", text: "Hel" });
     handleMsg({ type: "STREAM_DELTA", id: "s2", text: "lo" });
+    await nextFrame();
     const el = document.querySelector(".msg.msg-assistant.streaming");
     expect(el.textContent).toBe("Hello");
+  });
+
+  it("coalesces multiple deltas in the same frame into a single render", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "sCoalesce" });
+    // Five deltas back-to-back — all flushed in one rAF tick.
+    for (const t of ["a", "b", "c", "d", "e"]) {
+      handleMsg({ type: "STREAM_DELTA", id: "sCoalesce", text: t });
+    }
+    await nextFrame();
+    expect(document.querySelector(".msg.msg-assistant.streaming").textContent).toBe("abcde");
   });
 
   it("ignores STREAM_DELTA for a different active stream id", async () => {
     await setup();
     handleMsg({ type: "STREAM_START", id: "s3" });
     handleMsg({ type: "STREAM_DELTA", id: "other", text: "lost" });
+    await nextFrame();
     expect(document.querySelector(".msg.msg-assistant").textContent).toBe("");
   });
 
-  it("STREAM_END removes the streaming class and resets state", async () => {
+  it("STREAM_END removes the streaming class and runs a final synchronous render", async () => {
     await setup();
     handleMsg({ type: "STREAM_START", id: "s4" });
     handleMsg({ type: "STREAM_DELTA", id: "s4", text: "hi" });
+    // STREAM_END runs synchronously: it must paint even when the pending
+    // rAF hasn't fired yet.
     handleMsg({ type: "STREAM_END", id: "s4" });
     const el = document.querySelector(".msg.msg-assistant");
     expect(el).not.toBeNull();
     expect(el.classList.contains("streaming")).toBe(false);
+    expect(el.textContent).toBe("hi");
     // Subsequent ASSISTANT_TEXT now renders normally
     handleMsg({ type: "ASSISTANT_TEXT", text: "final" });
     expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(2);
+  });
+
+  it("rAF callback that fires after STREAM_END is a no-op (no orphan paint)", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "sLate" });
+    handleMsg({ type: "STREAM_DELTA", id: "sLate", text: "x" });
+    // STREAM_END synchronously: cancels rAF and clears state.streaming.
+    handleMsg({ type: "STREAM_END", id: "sLate" });
+    // Now wait for the next animation frame; the scheduled rAF (if any
+    // leaked) would fire here and read from null state.streaming.
+    await nextFrame();
+    // No exception thrown above, no second .streaming message:
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(1);
   });
 
   it("STREAM_END for an unknown id is a no-op", async () => {

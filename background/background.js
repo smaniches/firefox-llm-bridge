@@ -13,10 +13,18 @@ import {
   shouldPreview,
   scanPageContent,
   frameUntrustedText,
+  URL_BEARING_TOOLS,
 } from "./lib/policy.js";
 import { computeCost, formatCost } from "./lib/pricing.js";
 
 const PERSIST_KEY = "conversationState";
+
+/**
+ * Default ceiling on the in-memory conversation history. Older messages are
+ * dropped from the front when this is exceeded; the trim only fires between
+ * LLM calls, never mid-stream. Configurable via `maxHistory` in storage.
+ */
+const DEFAULT_MAX_HISTORY = 50;
 
 const state = {
   conversationHistory: [],
@@ -24,6 +32,7 @@ const state = {
   isAgentRunning: false,
   abortController: null,
   maxTurns: 25,
+  maxHistory: DEFAULT_MAX_HISTORY,
   turnCount: 0,
   /** @type {import("./lib/policy.js").SafetyPolicy | null} */
   policy: null,
@@ -558,34 +567,41 @@ async function runAgentLoop(userMessage, port) {
         break;
       }
 
-      // Begin a streamed assistant turn. The sidebar starts a new "in-flight"
-      // message on STREAM_START and appends each STREAM_DELTA chunk. We still
-      // emit a final ASSISTANT_TEXT for non-streaming providers and as a
-      // canonical end-of-turn marker.
+      // Begin a streamed assistant turn. The sidebar opens an in-flight
+      // message on STREAM_START and appends each STREAM_DELTA. STREAM_END
+      // MUST fire whether or not the LLM call succeeds — otherwise the
+      // sidebar's streaming state is left dangling and every subsequent
+      // ASSISTANT_TEXT is suppressed by the dedup logic.
       const streamId = `t${state.turnCount}-${Date.now()}`;
       send(port, { type: "STREAM_START", id: streamId });
       const onTextChunk = (text) => {
         send(port, { type: "STREAM_DELTA", id: streamId, text });
       };
 
-      const response = await callLLM(
-        SYSTEM_PROMPT,
-        state.conversationHistory,
-        BROWSER_TOOLS,
-        state.abortController.signal,
-        onTextChunk,
-      );
+      let response;
+      try {
+        response = await callLLM(
+          SYSTEM_PROMPT,
+          state.conversationHistory,
+          BROWSER_TOOLS,
+          state.abortController.signal,
+          onTextChunk,
+        );
+      } finally {
+        // Emit STREAM_END before propagating any error from callLLM so the
+        // sidebar can release its streaming state.
+        send(port, {
+          type: "STREAM_END",
+          id: streamId,
+          cost: formatCost(state.cost.sessionUsd),
+          tokens: {
+            prompt: state.cost.promptTokens,
+            completion: state.cost.completionTokens,
+          },
+        });
+      }
       state.conversationHistory.push({ role: "assistant", content: response.content });
       if (info?.model) recordUsage(info.model, response.usage);
-      send(port, {
-        type: "STREAM_END",
-        id: streamId,
-        cost: formatCost(state.cost.sessionUsd),
-        tokens: {
-          prompt: state.cost.promptTokens,
-          completion: state.cost.completionTokens,
-        },
-      });
 
       for (const b of response.content) {
         if (b.type === "text" && b.text) send(port, { type: "ASSISTANT_TEXT", text: b.text });
@@ -609,11 +625,16 @@ async function runAgentLoop(userMessage, port) {
           break;
         }
 
-        // Policy: domain allow/blocklist on navigation.
-        if (b.name === "navigate" && state.policy) {
+        // Policy: domain allow/blocklist for any tool that takes a URL.
+        // Currently `navigate` and `download_file`; URL_BEARING_TOOLS is the
+        // single source of truth so adding a tool only touches policy.js.
+        if (URL_BEARING_TOOLS.has(b.name) && state.policy) {
           const verdict = isNavigationAllowed(b.input?.url || "", state.policy);
           if (!verdict.allowed) {
-            const denied = { error: `Navigation denied: ${verdict.reason}`, url: b.input?.url };
+            const denied = {
+              error: `Tool ${b.name} denied: ${verdict.reason}`,
+              url: b.input?.url,
+            };
             results.push({
               tool_use_id: b.id,
               toolName: b.name,
@@ -679,6 +700,8 @@ async function runAgentLoop(userMessage, port) {
         state.conversationHistory.push(await buildToolResultMessage(results));
         pushPendingVisionImage(state.conversationHistory);
       }
+      // Trim only between turns. The current turn's messages are safe.
+      trimHistory();
     }
 
     if (state.turnCount >= state.maxTurns) {
@@ -743,25 +766,54 @@ async function runChatOnly(userMessage, port) {
     message: info ? `${info.modelName}...` : "Thinking...",
   });
 
+  // Chat mode now streams, persists, and accrues cost the same way the agent
+  // loop does. The previous implementation was a silent regression: long
+  // answers blocked with no feedback, conversations vanished on restart,
+  // and BYOK costs were invisible.
+  const streamId = `chat-${Date.now()}`;
+  send(port, { type: "STREAM_START", id: streamId });
+  const onTextChunk = (text) => send(port, { type: "STREAM_DELTA", id: streamId, text });
+
   try {
-    const r = await callLLM(
-      "You are Firefox LLM Bridge. Answer questions about the page or have a general conversation. Be concise.",
-      state.conversationHistory,
-      [],
-      state.abortController.signal,
-    );
+    let r;
+    try {
+      r = await callLLM(
+        "You are Firefox LLM Bridge. Answer questions about the page or have a general conversation. Be concise.",
+        state.conversationHistory,
+        [],
+        state.abortController.signal,
+        onTextChunk,
+      );
+    } finally {
+      send(port, {
+        type: "STREAM_END",
+        id: streamId,
+        cost: formatCost(state.cost.sessionUsd),
+        tokens: {
+          prompt: state.cost.promptTokens,
+          completion: state.cost.completionTokens,
+        },
+      });
+    }
     const text = r.content
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("");
     state.conversationHistory.push({ role: "assistant", content: text });
+    if (info?.model) recordUsage(info.model, r.usage);
+    trimHistory();
     send(port, { type: "ASSISTANT_TEXT", text });
   } catch (err) {
     if (err.name !== "AbortError") send(port, { type: "ERROR", message: err.message });
   } finally {
     state.isAgentRunning = false;
     state.abortController = null;
-    send(port, { type: "STATUS", status: "idle" });
+    await persistSession();
+    send(port, {
+      type: "STATUS",
+      status: "idle",
+      cost: formatCost(state.cost.sessionUsd),
+    });
   }
 }
 
@@ -819,6 +871,14 @@ browser.runtime.onConnect.addListener((port) => {
           providerId: info?.id || null,
           cost: formatCost(state.cost.sessionUsd),
         });
+        // If there's a restored conversation, hand the renderable view to the
+        // sidebar so it can repopulate the message list. Without this,
+        // persistence felt half-broken — the background remembered the
+        // session, but the user couldn't see it.
+        const renderable = sidebarHistoryView(state.conversationHistory);
+        if (renderable.length > 0) {
+          send(port, { type: "HISTORY_RESTORE", messages: renderable });
+        }
         break;
       }
       case "CHAT_ONLY":
@@ -839,8 +899,69 @@ browser.runtime.onConnect.addListener((port) => {
 });
 
 async function loadSettings() {
-  const s = await browser.storage.local.get(["maxTurns"]);
+  const s = await browser.storage.local.get(["maxTurns", "maxHistory"]);
   state.maxTurns = s.maxTurns || 25;
+  state.maxHistory = s.maxHistory || DEFAULT_MAX_HISTORY;
+}
+
+/**
+ * Strip the chat-mode untrusted-content framing from a user prompt so the
+ * sidebar shows the original user question. Chat mode wraps page content
+ * with `[BEGIN UNTRUSTED PAGE CONTENT … END]` and a `[USER QUESTION]`
+ * trailer; restored sessions should display only the question.
+ *
+ * @param {string} content
+ * @returns {string}
+ */
+function unframeUserContent(content) {
+  if (typeof content !== "string") return "";
+  const m = /\n\n\[USER QUESTION\]\n([\s\S]*)$/.exec(content);
+  return m ? m[1] : content;
+}
+
+/**
+ * Produce a compact, render-safe view of `conversationHistory` for the
+ * sidebar to display when the user reopens the panel. Filters out internal
+ * messages (tool_result blocks, vision image payloads, assistant turns
+ * that were purely tool calls) and unwraps chat-mode framing.
+ *
+ * @param {Array<{ role: string, content: any }>} history
+ * @returns {Array<{ role: "user" | "assistant", text: string }>}
+ */
+function sidebarHistoryView(history) {
+  const out = [];
+  for (const msg of history) {
+    if (msg.role === "user") {
+      if (typeof msg.content === "string") {
+        out.push({ role: "user", text: unframeUserContent(msg.content) });
+      }
+      // Arrays (tool_result + image) are internal — skip.
+    } else if (msg.role === "assistant") {
+      if (typeof msg.content === "string" && msg.content.length > 0) {
+        out.push({ role: "assistant", text: msg.content });
+      } else if (Array.isArray(msg.content)) {
+        const text = msg.content
+          .filter((b) => b.type === "text" && typeof b.text === "string")
+          .map((b) => b.text)
+          .join("");
+        if (text.length > 0) out.push({ role: "assistant", text });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Trim `state.conversationHistory` to at most `state.maxHistory` entries.
+ * Always preserves whole user→assistant pairs by dropping from the front in
+ * pairs of two. Called between LLM calls so it never deletes a message that
+ * is still being streamed.
+ */
+function trimHistory() {
+  const max = state.maxHistory;
+  while (state.conversationHistory.length > max) {
+    state.conversationHistory.splice(0, 2);
+  }
 }
 loadSettings();
 restoreSession();
@@ -868,6 +989,7 @@ export {
   BROWSER_TOOLS,
   SYSTEM_PROMPT,
   PERSIST_KEY,
+  DEFAULT_MAX_HISTORY,
   executeTool,
   sleep,
   runAgentLoop,
@@ -877,4 +999,7 @@ export {
   persistSession,
   restoreSession,
   recordUsage,
+  trimHistory,
+  sidebarHistoryView,
+  unframeUserContent,
 };
