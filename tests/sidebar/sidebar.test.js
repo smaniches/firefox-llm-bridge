@@ -173,6 +173,13 @@ describe("sidebar: message rendering", () => {
     expect(document.getElementById("turn-counter").textContent).toBe("Turn 1");
   });
 
+  it("uses fallback gear icon for an unknown tool name", async () => {
+    await setup();
+    handleMsg({ type: "TOOL_USE", tool: "some_future_tool", input: {}, turn: 1 });
+    const icon = document.querySelector(".msg-tool span:first-child");
+    expect(icon.textContent).toBe("⚙");
+  });
+
   it("marks last tool as success/failure on TOOL_RESULT", async () => {
     await setup();
     handleMsg({ type: "TOOL_USE", tool: "click_element", input: {}, turn: 1 });
@@ -238,7 +245,9 @@ describe("sidebar: message rendering", () => {
 describe("sidebar: send + mode toggle", () => {
   it("send button posts a CHAT_ONLY message in chat mode", async () => {
     await setup();
-    document.getElementById("input-text").value = "hi";
+    const inp = document.getElementById("input-text");
+    inp.value = "hi";
+    inp.dispatchEvent(new Event("input"));
     document.getElementById("btn-send").click();
     expect(port.postMessage).toHaveBeenCalledWith({ type: "CHAT_ONLY", text: "hi" });
   });
@@ -246,7 +255,9 @@ describe("sidebar: send + mode toggle", () => {
   it("send button posts a SEND_MESSAGE in agent mode", async () => {
     await setup();
     document.getElementById("mode-agent").click();
-    document.getElementById("input-text").value = "do it";
+    const inp = document.getElementById("input-text");
+    inp.value = "do it";
+    inp.dispatchEvent(new Event("input"));
     document.getElementById("btn-send").click();
     expect(port.postMessage).toHaveBeenCalledWith({ type: "SEND_MESSAGE", text: "do it" });
   });
@@ -255,6 +266,20 @@ describe("sidebar: send + mode toggle", () => {
     await setup();
     const before = port.postMessage.mock.calls.length;
     document.getElementById("btn-send").click();
+    expect(port.postMessage.mock.calls.length).toBe(before);
+  });
+
+  it("does not send while agent is running, even with text", async () => {
+    await setup();
+    // Mark running via STATUS message
+    handleMsg({ type: "STATUS", status: "running", message: "..." });
+    const before = port.postMessage.mock.calls.length;
+    // Bypass the disabled-attr by setting value + dispatching Enter
+    const input = document.getElementById("input-text");
+    input.disabled = false;
+    input.value = "hello";
+    const evt = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    input.dispatchEvent(evt);
     expect(port.postMessage.mock.calls.length).toBe(before);
   });
 

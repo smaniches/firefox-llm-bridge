@@ -257,9 +257,9 @@ describe("ollama provider", () => {
     });
 
     it("propagates AbortError without wrapping", async () => {
-      const abortErr = new DOMException("aborted", "AbortError");
+      const abortErr = Object.assign(new Error("aborted"), { name: "AbortError" });
       globalThis.fetch.mockRejectedValueOnce(abortErr);
-      await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toThrow(abortErr);
+      await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toBe(abortErr);
     });
 
     it("throws on non-200", async () => {

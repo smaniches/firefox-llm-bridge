@@ -56,6 +56,10 @@ export async function getActiveConfig() {
   return {
     provider,
     apiKey: providerConfig.key || null,
+    // Defensive triple fallback: stored model, provider default, first listed.
+    // Every shipped provider has `default: true` on one model, so the third
+    // branch is a guard for future provider definitions that lack one.
+    /* v8 ignore next */
     model: providerConfig.model || provider.models.find((m) => m.default)?.id || provider.models[0]?.id,
     endpoint: providerConfig.endpoint || null,
   };

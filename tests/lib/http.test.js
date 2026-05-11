@@ -10,12 +10,20 @@ import {
 import { AuthError, RateLimitError, NetworkError, TimeoutError, ProviderError } from "../../background/lib/errors.js";
 
 function mockResponse(body, { ok = true, status = 200, headers = {} } = {}) {
+  const text = typeof body === "string" ? body : JSON.stringify(body);
   return {
     ok,
     status,
     headers: { get: (k) => headers[k.toLowerCase()] ?? null },
-    text: vi.fn().mockResolvedValue(typeof body === "string" ? body : JSON.stringify(body)),
-    json: vi.fn().mockResolvedValue(typeof body === "string" ? JSON.parse(body || "null") : body),
+    text: vi.fn().mockResolvedValue(text),
+    // Lazy: only parse json when called, and tolerate non-JSON text bodies.
+    json: vi.fn().mockImplementation(async () => {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return null;
+      }
+    }),
   };
 }
 
@@ -178,6 +186,35 @@ describe("fetchWithRetry", () => {
     await expect(
       fetchWithRetry("u", {}, { providerId: "p", fetchImpl, signal: caller.signal, retry: FAST }),
     ).rejects.toBe("user-stop");
+  });
+
+  it("propagates caller abort with no reason (falls back to the inner error)", async () => {
+    const caller = new AbortController();
+    const fetchImpl = vi.fn(async (_u, init) => {
+      // Mimic browsers that abort() without a reason; the inner fetch sees DOMException
+      const inner = new Error("AbortError");
+      inner.name = "AbortError";
+      caller.abort();
+      throw inner;
+    });
+    await expect(
+      fetchWithRetry("u", {}, { providerId: "p", fetchImpl, signal: caller.signal, retry: FAST }),
+    ).rejects.toThrow();
+  });
+
+  it("wraps non-Error network throws using String() fallback", async () => {
+    const fetchImpl = vi.fn().mockRejectedValueOnce("plain-string-error");
+    await expect(
+      fetchWithRetry("u", {}, { providerId: "p", fetchImpl, retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 } }),
+    ).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it("falls through to defensive NetworkError when maxAttempts is zero", async () => {
+    const fetchImpl = vi.fn();
+    await expect(
+      fetchWithRetry("u", {}, { providerId: "p", fetchImpl, retry: { maxAttempts: 0, baseDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 } }),
+    ).rejects.toBeInstanceOf(NetworkError);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("treats per-attempt timeout as retryable", async () => {

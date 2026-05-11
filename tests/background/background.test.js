@@ -219,10 +219,10 @@ describe("executeTool", () => {
     vi.useFakeTimers();
     globalThis.browser.webNavigation.onCompleted.addListener.mockImplementationOnce(() => {});
     const p = bridge.executeTool("navigate", { url: "u" });
-    await vi.advanceTimersByTimeAsync(15001);
+    // 15s for the webNavigation timeout, +500ms for the post-navigate sleep
+    await vi.advanceTimersByTimeAsync(15600);
     const r = await p;
     expect(r.success).toBe(true);
-    vi.useRealTimers();
   });
 
   it("scroll_page dispatches ACTION_SCROLL with default amount", async () => {
@@ -274,7 +274,6 @@ describe("executeTool", () => {
     await vi.advanceTimersByTimeAsync(1000);
     const r = await p;
     expect(r.success).toBe(true);
-    vi.useRealTimers();
   });
 
   it("go_back calls tabs.goBack", async () => {
@@ -357,6 +356,25 @@ describe("runAgentLoop", () => {
       .filter((c) => c[0].type === "ASSISTANT_TEXT")
       .map((c) => c[0].text);
     expect(texts.some((t) => /turn limit/i.test(t))).toBe(true);
+  });
+
+  it("continues past non-tool_use content blocks in a tool_use response (mixed content)", async () => {
+    providers.callLLM
+      .mockResolvedValueOnce({
+        content: [
+          { type: "text", text: "let me run a tool" },
+          { type: "tool_use", id: "t1", name: "task_complete", input: { summary: "done" } },
+        ],
+        stop_reason: "tool_use",
+      });
+
+    const port = makePort();
+    await bridge.runAgentLoop("go", port);
+
+    const types = port.postMessage.mock.calls.map((c) => c[0].type);
+    expect(types).toContain("ASSISTANT_TEXT");
+    expect(types).toContain("TOOL_USE");
+    expect(types).toContain("TASK_COMPLETE");
   });
 
   it("propagates SCREENSHOT message when screenshot tool runs", async () => {
@@ -565,6 +583,29 @@ describe("port message handlers", () => {
     expect(port.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: "STATUS" }),
     );
+  });
+
+  it("GET_STATUS returns null fields when no provider info", async () => {
+    providers.getActiveProviderInfo.mockResolvedValueOnce(null);
+    const port = makePortWithName();
+    getConnectListener()(port);
+    const handler = port.onMessage.addListener.mock.calls[0][0];
+    await handler({ type: "GET_STATUS" });
+    const msg = port.postMessage.mock.calls.find((c) => c[0].type === "STATUS")[0];
+    expect(msg.hasProvider).toBe(false);
+    expect(msg.providerName).toBeNull();
+    expect(msg.modelName).toBeNull();
+    expect(msg.providerId).toBeNull();
+  });
+
+  it("GET_STATUS while running emits status:running", async () => {
+    bridge.state.isAgentRunning = true;
+    const port = makePortWithName();
+    getConnectListener()(port);
+    const handler = port.onMessage.addListener.mock.calls[0][0];
+    await handler({ type: "GET_STATUS" });
+    const msg = port.postMessage.mock.calls.find((c) => c[0].type === "STATUS")[0];
+    expect(msg.status).toBe("running");
   });
 
   it("CLEAR_HISTORY resets state and emits HISTORY_CLEARED", async () => {

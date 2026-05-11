@@ -343,16 +343,22 @@
 
     // Set value directly
     if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
-      // Use native setter to trigger React/framework listeners
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, "value"
-      )?.set || Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype, "value"
-      )?.set;
+      // Use the native setter on the matching prototype so React/framework
+      // listeners are triggered. Calling the Input setter on a Textarea
+      // (and vice versa) throws "wrong receiver" in strict engines, so we
+      // pick by tag name rather than chaining with `||`.
+      const proto =
+        el.tagName === "TEXTAREA"
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
 
-      if (nativeInputValueSetter) {
-        nativeInputValueSetter.call(el, text);
+      if (nativeSetter) {
+        nativeSetter.call(el, text);
       } else {
+        // Defensive: modern engines always expose the native setter via
+        // Object.getOwnPropertyDescriptor, but keep a direct-assignment
+        // fallback in case a hostile page redefines the prototype property.
         el.value = text;
       }
 

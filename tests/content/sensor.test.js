@@ -30,8 +30,69 @@ async function importSensorFresh() {
   listener = calls[calls.length - 1][0];
 }
 
+/**
+ * jsdom does not compute layout — `offsetParent` is null and
+ * `getBoundingClientRect()` returns zero-sized rects for every element.
+ * That makes the sensor's `isVisible` check reject everything. Patch the
+ * HTMLElement prototype so tests can exercise the real DOM-walking logic.
+ */
+function patchVisibility() {
+  // HTMLElement defines offsetParent in jsdom; patch there.
+  Object.defineProperty(HTMLElement.prototype, "offsetParent", {
+    configurable: true,
+    get() {
+      return this.tagName === "BODY" || this.tagName === "HTML"
+        ? null
+        : document.body;
+    },
+  });
+  const fakeRect = () => ({
+    x: 10,
+    y: 10,
+    width: 100,
+    height: 20,
+    top: 10,
+    left: 10,
+    right: 110,
+    bottom: 30,
+    toJSON() {
+      return this;
+    },
+  });
+  Element.prototype.getBoundingClientRect = fakeRect;
+  HTMLElement.prototype.getBoundingClientRect = fakeRect;
+
+  // jsdom's HTMLElement.innerText returns undefined; patch to fall back to textContent.
+  Object.defineProperty(HTMLElement.prototype, "innerText", {
+    configurable: true,
+    get() {
+      return this.textContent;
+    },
+    set(v) {
+      this.textContent = v;
+    },
+  });
+
+  // jsdom's `contentEditable` property does not always reflect the attribute;
+  // back it with the attribute so the sensor's check sees the right value.
+  Object.defineProperty(HTMLElement.prototype, "contentEditable", {
+    configurable: true,
+    get() {
+      const attr = this.getAttribute("contenteditable");
+      if (attr === "true" || attr === "false" || attr === "plaintext-only") {
+        return attr;
+      }
+      return "inherit";
+    },
+    set(v) {
+      this.setAttribute("contenteditable", v);
+    },
+  });
+}
+
 beforeEach(async () => {
   document.body.innerHTML = "";
+  patchVisibility();
   await importSensorFresh();
 });
 
@@ -124,7 +185,7 @@ describe("sensor: SENSOR_READ - role inference", () => {
 
   it("treats element with onclick or data-action as button", async () => {
     document.body.innerHTML = `
-      <div onclick="">A</div>
+      <div onclick="doX()">A</div>
       <div data-action="x">B</div>
     `;
     const r = await send({ type: "SENSOR_READ" });
@@ -193,6 +254,73 @@ describe("sensor: SENSOR_READ - role inference", () => {
     `;
     const r = await send({ type: "SENSOR_READ" });
     expect(r.elements).toHaveLength(1);
+  });
+
+  it("treats position:fixed elements as visible even with no offsetParent", async () => {
+    document.body.innerHTML = `<button id="b" style="position:fixed">X</button>`;
+    const el = document.querySelector("#b");
+    Object.defineProperty(el, "offsetParent", { value: null, configurable: true });
+    // jsdom doesn't compute style.position from inline style perfectly in all
+    // configurations; stub getComputedStyle for this element specifically.
+    const orig = window.getComputedStyle;
+    window.getComputedStyle = function (n) {
+      if (n === el) {
+        return { display: "block", visibility: "visible", position: "fixed" };
+      }
+      return orig.call(window, n);
+    };
+    try {
+      const r = await send({ type: "SENSOR_READ" });
+      expect(r.elements.some((e) => e.selector.includes("#b"))).toBe(true);
+    } finally {
+      window.getComputedStyle = orig;
+    }
+  });
+
+  it("rejects elements with display:none when offsetParent is null", async () => {
+    document.body.innerHTML = `<button id="b">X</button>`;
+    const el = document.querySelector("#b");
+    Object.defineProperty(el, "offsetParent", { value: null, configurable: true });
+    const orig = window.getComputedStyle;
+    window.getComputedStyle = function (n) {
+      if (n === el) {
+        return { display: "none", visibility: "visible", position: "static" };
+      }
+      return orig.call(window, n);
+    };
+    try {
+      const r = await send({ type: "SENSOR_READ" });
+      expect(r.elements.some((e) => e.selector.includes("#b"))).toBe(false);
+    } finally {
+      window.getComputedStyle = orig;
+    }
+  });
+
+  it("rejects elements with visibility:hidden when offsetParent is null", async () => {
+    document.body.innerHTML = `<button id="b">X</button>`;
+    const el = document.querySelector("#b");
+    Object.defineProperty(el, "offsetParent", { value: null, configurable: true });
+    const orig = window.getComputedStyle;
+    window.getComputedStyle = function (n) {
+      if (n === el) {
+        return { display: "block", visibility: "hidden", position: "static" };
+      }
+      return orig.call(window, n);
+    };
+    try {
+      const r = await send({ type: "SENSOR_READ" });
+      expect(r.elements.some((e) => e.selector.includes("#b"))).toBe(false);
+    } finally {
+      window.getComputedStyle = orig;
+    }
+  });
+
+  it("rejects elements with zero-sized bounding rect", async () => {
+    document.body.innerHTML = `<button id="zero">X</button>`;
+    const el = document.querySelector("#zero");
+    el.getBoundingClientRect = () => ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 });
+    const r = await send({ type: "SENSOR_READ" });
+    expect(r.elements.some((e) => e.selector.includes("#zero"))).toBe(false);
   });
 });
 
@@ -292,6 +420,30 @@ describe("sensor: generateSelector", () => {
     const r = await send({ type: "SENSOR_READ" });
     expect(r.elements[1].selector).toMatch(/nth-of-type/);
   });
+
+  it("handles elements without any className", async () => {
+    document.body.innerHTML = `<section><div tabindex="0">x</div></section>`;
+    const r = await send({ type: "SENSOR_READ" });
+    expect(r.elements[0].selector).toMatch(/div/);
+  });
+
+  it("filters out Tailwind-style classes (containing ':')", async () => {
+    document.body.innerHTML = `<div class="hover:bg-red dark:text-white" tabindex="0">x</div>`;
+    const r = await send({ type: "SENSOR_READ" });
+    // Selector should NOT contain hover: / dark: tokens
+    expect(r.elements[0].selector).not.toContain("hover:");
+    expect(r.elements[0].selector).not.toContain("dark:");
+  });
+
+  it("walks up to an ancestor with an id and stops there", async () => {
+    document.body.innerHTML = `
+      <section id="root">
+        <div><button class="btn">A</button></div>
+      </section>
+    `;
+    const r = await send({ type: "SENSOR_READ" });
+    expect(r.elements[0].selector).toMatch(/#root/);
+  });
 });
 
 describe("sensor: ACTION_CLICK", () => {
@@ -376,6 +528,32 @@ describe("sensor: ACTION_TYPE", () => {
     });
     expect(r.success).toBe(true);
     expect(document.querySelector("#t").value).toBe("long input");
+  });
+
+  it("falls back to direct el.value assignment when the native setter is unavailable", async () => {
+    document.body.innerHTML = `<input id="i" type="text" />`;
+    // Force Object.getOwnPropertyDescriptor to return undefined for the
+    // HTMLInputElement.prototype.value descriptor so the sensor's `nativeSetter`
+    // lookup returns undefined and falls through to `el.value = text`.
+    const orig = Object.getOwnPropertyDescriptor;
+    const spy = vi.spyOn(Object, "getOwnPropertyDescriptor").mockImplementation((obj, prop) => {
+      if (prop === "value" && (obj === HTMLInputElement.prototype || obj === HTMLTextAreaElement.prototype)) {
+        return undefined;
+      }
+      return orig.call(Object, obj, prop);
+    });
+    try {
+      const r = await send({
+        type: "ACTION_TYPE",
+        selector: "#i",
+        text: "fallback",
+        clearFirst: true,
+      });
+      expect(r.success).toBe(true);
+      expect(document.querySelector("#i").value).toBe("fallback");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

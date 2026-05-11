@@ -1,13 +1,11 @@
 /**
  * FIREFOX LLM BRIDGE - Options Page Controller
- * Handles per-provider configuration, connection testing, and Ollama model detection.
+ *
+ * Module-scoped (loaded as `<script type="module">`). Handles per-provider
+ * configuration, connection testing, and Ollama model detection.
  */
 
-(() => {
-  "use strict";
-
-  const PROVIDER_IDS = ["ollama", "anthropic", "openai", "google"];
-  let activeProvider = null;
+let activeProvider = null;
 
   // ============================================================
   // LOAD SAVED SETTINGS
@@ -251,5 +249,4 @@
     e.className = "status-msg" + (type ? ` ${type}` : "");
   }
 
-  load();
-})();
+load();
