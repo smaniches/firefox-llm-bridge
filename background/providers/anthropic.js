@@ -110,12 +110,24 @@ export const anthropic = {
    * @param {((text: string) => void)|undefined} onTextChunk
    * @param {{ extendedThinking?: boolean, thinkingBudget?: number }} [options]
    */
-  async call(apiKey, model, systemPrompt, messages, tools, signal, _endpoint, onTextChunk, options = {}) {
+  async call(
+    apiKey,
+    model,
+    systemPrompt,
+    messages,
+    tools,
+    signal,
+    _endpoint,
+    onTextChunk,
+    options = {},
+  ) {
     const stream = typeof onTextChunk === "function";
 
     // Build the system array with a cache_control breakpoint on the last element
     // so the system prompt is promoted to the cacheable prefix tier.
-    const systemArray = [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
+    const systemArray = [
+      { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
+    ];
 
     // Assemble the base request body.
     const body = {

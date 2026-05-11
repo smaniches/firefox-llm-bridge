@@ -115,7 +115,10 @@ describe("privacy posture: no telemetry leaks in shipped code", () => {
         const rel = relative(REPO_ROOT, file).replace(/\\/g, "/");
         const text = readFileSync(file, "utf8");
         if (/\beval\s*\(/.test(text)) offenders.push(`${file}: eval()`);
-        if (/\bnew\s+Function\s*\(/.test(text) && !ALLOWED_NEW_FUNCTION.some((p) => rel.endsWith(p)))
+        if (
+          /\bnew\s+Function\s*\(/.test(text) &&
+          !ALLOWED_NEW_FUNCTION.some((p) => rel.endsWith(p))
+        )
           offenders.push(`${file}: new Function()`);
         if (/import\s*\(\s*[`'"]https?:/.test(text)) {
           offenders.push(`${file}: remote import()`);

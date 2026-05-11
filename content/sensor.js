@@ -710,7 +710,6 @@
 
       case "ACTION_EXECUTE_SCRIPT": {
         try {
-          // eslint-disable-next-line no-new-func
           const result = new Function(`return (${msg.code})`)();
           const serialised = result === undefined ? null : result;
           return Promise.resolve({ success: true, result: serialised });

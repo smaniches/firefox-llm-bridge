@@ -247,7 +247,12 @@ describe("anthropic provider", () => {
       expect(chunks).toEqual(["Hello", " world"]);
       expect(r.content).toEqual([{ type: "text", text: "Hello world" }]);
       expect(r.stop_reason).toBe("end_turn");
-      expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 0 });
+      expect(r.usage).toEqual({
+        promptTokens: 10,
+        completionTokens: 5,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      });
     });
 
     it("rebuilds a streamed tool_use block from input_json_delta chunks", async () => {
@@ -406,7 +411,12 @@ describe("anthropic provider", () => {
         ]),
       );
       const r = await anthropic.call("k", "m", "s", [], [], null, undefined, () => {});
-      expect(r.usage).toEqual({ promptTokens: 0, completionTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 });
+      expect(r.usage).toEqual({
+        promptTokens: 0,
+        completionTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      });
     });
 
     it("handles message_start with an empty usage object (input_tokens missing)", async () => {
@@ -650,7 +660,11 @@ describe("anthropic provider", () => {
           { event: "content_block_stop", data: { type: "content_block_stop", index: 1 } },
           {
             event: "message_delta",
-            data: { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 8 } },
+            data: {
+              type: "message_delta",
+              delta: { stop_reason: "end_turn" },
+              usage: { output_tokens: 8 },
+            },
           },
         ]),
       );
@@ -711,7 +725,11 @@ describe("anthropic provider", () => {
           },
           {
             event: "message_delta",
-            data: { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 10 } },
+            data: {
+              type: "message_delta",
+              delta: { stop_reason: "end_turn" },
+              usage: { output_tokens: 10 },
+            },
           },
         ]),
       );
