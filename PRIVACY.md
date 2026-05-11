@@ -2,7 +2,7 @@
 
 **Effective date:** 2026-05-11
 **Maintainer:** Santiago Maniches / TOPOLOGICA LLC
-**Contact:** privacy@topologica.app
+**Contact:** privacy@topologica.ai
 
 ---
 
@@ -114,6 +114,6 @@ Material changes will be documented in [CHANGELOG.md](CHANGELOG.md) and reflecte
 
 ## Contact
 
-Questions, requests, complaints: **privacy@topologica.app**.
+Questions, requests, complaints: **privacy@topologica.ai**.
 
 For security vulnerabilities, see [SECURITY.md](SECURITY.md).

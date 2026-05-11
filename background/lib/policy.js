@@ -48,7 +48,7 @@ export const DESTRUCTIVE_TOOLS = Object.freeze(
 );
 
 /** Tool names whose `input.url` (or equivalent) must pass the domain policy. */
-export const URL_BEARING_TOOLS = Object.freeze(new Set(["navigate", "download_file"]));
+export const URL_BEARING_TOOLS = Object.freeze(new Set(["navigate", "download_file", "new_tab"]));
 
 /**
  * Load the active policy from browser.storage.local. Falls back to the

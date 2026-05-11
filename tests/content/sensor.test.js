@@ -1079,3 +1079,170 @@ describe("sensor: resolveElement uses cached ref before selector", () => {
     expect(r.success).toBe(true);
   });
 });
+
+// ── New tools added in v0.5.x ─────────────────────────────────────────────
+
+describe("sensor: SENSOR_FIND_TEXT", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "<p>Hello world</p><p>hello again</p>";
+  });
+
+  it("finds text case-insensitively by default", async () => {
+    const r = await send({ type: "SENSOR_FIND_TEXT", text: "hello", caseSensitive: false });
+    expect(r.found).toBe(true);
+    expect(r.count).toBe(2);
+  });
+
+  it("finds text case-sensitively when requested", async () => {
+    const r = await send({ type: "SENSOR_FIND_TEXT", text: "Hello", caseSensitive: true });
+    expect(r.found).toBe(true);
+    expect(r.count).toBe(1);
+  });
+
+  it("returns found:false when text is not present", async () => {
+    const r = await send({ type: "SENSOR_FIND_TEXT", text: "xyzzy", caseSensitive: false });
+    expect(r.found).toBe(false);
+    expect(r.count).toBe(0);
+    expect(r.matches).toHaveLength(0);
+  });
+
+  it("returns error when text is empty", async () => {
+    const r = await send({ type: "SENSOR_FIND_TEXT", text: "" });
+    expect(r.error).toBeTruthy();
+  });
+
+  it("caps results at 20 matches", async () => {
+    document.body.innerHTML = Array.from({ length: 25 }, (_, i) => `<p>match${i}</p>`).join("");
+    // Searching for "match" appears in all 25 but result is capped at 20.
+    const r = await send({ type: "SENSOR_FIND_TEXT", text: "match", caseSensitive: false });
+    expect(r.count).toBeLessThanOrEqual(20);
+  });
+});
+
+describe("sensor: SENSOR_GET_SELECTION", () => {
+  it("returns the current selection text", async () => {
+    document.body.innerHTML = "<p id='p'>Select me</p>";
+    const range = document.createRange();
+    range.selectNodeContents(document.getElementById("p"));
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    const r = await send({ type: "SENSOR_GET_SELECTION" });
+    expect(r.text).toBe("Select me");
+    sel.removeAllRanges();
+  });
+
+  it("returns empty string when nothing is selected", async () => {
+    window.getSelection().removeAllRanges();
+    const r = await send({ type: "SENSOR_GET_SELECTION" });
+    expect(typeof r.text).toBe("string");
+  });
+});
+
+describe("sensor: ACTION_FOCUS", () => {
+  it("focuses a resolvable element by selector", async () => {
+    document.body.innerHTML = "<input id='f' type='text' />";
+    await send({ type: "SENSOR_READ" });
+    const r = await send({ type: "ACTION_FOCUS", selector: "#f", elementIndex: null });
+    expect(r.success).toBe(true);
+    // jsdom does not reliably update document.activeElement; verify via response
+    expect(r.focused).toBeTruthy();
+  });
+
+  it("returns error when element not found", async () => {
+    document.body.innerHTML = "";
+    await send({ type: "SENSOR_READ" });
+    const r = await send({ type: "ACTION_FOCUS", selector: "#missing", elementIndex: null });
+    expect(r.error).toBeTruthy();
+  });
+
+  it("uses aria-label as the focused label when present", async () => {
+    document.body.innerHTML = "<button aria-label='Submit'>Click</button>";
+    await send({ type: "SENSOR_READ" });
+    const r = await send({ type: "ACTION_FOCUS", selector: "button", elementIndex: null });
+    expect(r.success).toBe(true);
+    expect(r.focused).toBe("Submit");
+  });
+
+  it("falls back to element[N] when selector and label are both absent", async () => {
+    document.body.innerHTML = "<input type='text' />";
+    await send({ type: "SENSOR_READ" });
+    // elementIndex 0 resolves via lastElementRefs; no selector, no aria-label
+    const r = await send({ type: "ACTION_FOCUS", selector: null, elementIndex: 0 });
+    expect(r.success).toBe(true);
+    expect(r.focused).toMatch(/element\[0\]/);
+  });
+});
+
+describe("sensor: ACTION_SET_VALUE", () => {
+  it("sets value on an input and fires change events", async () => {
+    document.body.innerHTML = "<input id='v' type='text' />";
+    await send({ type: "SENSOR_READ" });
+    const events = [];
+    document.getElementById("v").addEventListener("input", () => events.push("input"));
+    document.getElementById("v").addEventListener("change", () => events.push("change"));
+    const r = await send({
+      type: "ACTION_SET_VALUE",
+      selector: "#v",
+      elementIndex: null,
+      value: "42",
+    });
+    expect(r.success).toBe(true);
+    expect(r.value).toBe("42");
+    expect(document.getElementById("v").value).toBe("42");
+    expect(events).toContain("input");
+    expect(events).toContain("change");
+  });
+
+  it("sets value on a textarea", async () => {
+    document.body.innerHTML = "<textarea id='ta'></textarea>";
+    await send({ type: "SENSOR_READ" });
+    const r = await send({
+      type: "ACTION_SET_VALUE",
+      selector: "#ta",
+      elementIndex: null,
+      value: "hello",
+    });
+    expect(r.success).toBe(true);
+    expect(document.getElementById("ta").value).toBe("hello");
+  });
+
+  it("returns error when element not found", async () => {
+    document.body.innerHTML = "";
+    await send({ type: "SENSOR_READ" });
+    const r = await send({
+      type: "ACTION_SET_VALUE",
+      selector: "#nope",
+      elementIndex: null,
+      value: "x",
+    });
+    expect(r.error).toBeTruthy();
+  });
+
+  it("falls back to direct assignment when no native setter", async () => {
+    document.body.innerHTML = "<input id='nosetter' type='text' />";
+    await send({ type: "SENSOR_READ" });
+    const orig = Object.getOwnPropertyDescriptor;
+    const spy = vi.spyOn(Object, "getOwnPropertyDescriptor").mockImplementation((obj, prop) => {
+      if (
+        prop === "value" &&
+        (obj === HTMLInputElement.prototype || obj === HTMLTextAreaElement.prototype)
+      ) {
+        return undefined;
+      }
+      return orig.call(Object, obj, prop);
+    });
+    try {
+      const r = await send({
+        type: "ACTION_SET_VALUE",
+        selector: "#nosetter",
+        elementIndex: null,
+        value: "fallback",
+      });
+      expect(r.success).toBe(true);
+      expect(r.value).toBe("fallback");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

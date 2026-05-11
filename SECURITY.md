@@ -22,7 +22,7 @@ https://github.com/smaniches/firefox-llm-bridge/security/advisories/new
 
 ### Alternative channel — email
 
-Email: **security@topologica.app**
+Email: **security@topologica.ai**
 
 Encrypt sensitive details with PGP if possible (key available on request).
 
