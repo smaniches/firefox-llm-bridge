@@ -498,16 +498,23 @@ function persistableHistory(history) {
   const out = [];
   for (const msg of history) {
     if (msg.role === "user") {
-      if (typeof msg.content === "string") {
+      if (typeof msg.content === "string" && msg.content.length > 0) {
         out.push({ role: "user", content: msg.content });
+      } else if (Array.isArray(msg.content)) {
+        // Mixed user content blocks (e.g. text + image, or text + tool_result)
+        // can still carry user-visible text. Keep the text, drop the rest.
+        const text = msg.content
+          .filter((b) => b && b.type === "text" && typeof b.text === "string")
+          .map((b) => b.text)
+          .join("");
+        if (text.length > 0) out.push({ role: "user", content: text });
       }
-      // Arrays (tool_result, image) are internal — skip.
     } else if (msg.role === "assistant") {
       if (typeof msg.content === "string" && msg.content.length > 0) {
         out.push({ role: "assistant", content: msg.content });
       } else if (Array.isArray(msg.content)) {
         const text = msg.content
-          .filter((b) => b.type === "text" && typeof b.text === "string")
+          .filter((b) => b && b.type === "text" && typeof b.text === "string")
           .map((b) => b.text)
           .join("");
         if (text.length > 0) out.push({ role: "assistant", content: text });
@@ -1049,6 +1056,7 @@ export {
   send,
   loadSettings,
   persistSession,
+  persistableHistory,
   restoreSession,
   recordUsage,
   trimHistory,

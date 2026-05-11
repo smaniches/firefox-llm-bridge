@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **CRITICAL: assistant messages were rendering twice.** Background
   emits `STREAM_END` then a trailing `ASSISTANT_TEXT` carrying the
   same final text. The sidebar's suppression logic only filtered
-  ASSISTANT_TEXT _during_ the stream; once `state.streaming` cleared
+  ASSISTANT*TEXT \_during* the stream; once `state.streaming` cleared
   on STREAM_END, the trailing message produced a second bubble.
   Fixed by tracking `state.lastStreamedText` on finalize and
   suppressing the first matching ASSISTANT_TEXT only. New tests cover

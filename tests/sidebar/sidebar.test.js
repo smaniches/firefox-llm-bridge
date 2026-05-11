@@ -80,20 +80,28 @@ describe("sidebar: connection lifecycle", () => {
     vi.useRealTimers();
   });
 
-  it("disconnect during an active stream clears streaming state", async () => {
+  it("disconnect during an active stream clears streaming state (with text)", async () => {
     await setup();
     handleMsg({ type: "STREAM_START", id: "sDisc" });
     handleMsg({ type: "STREAM_DELTA", id: "sDisc", text: "x" });
     expect(document.querySelectorAll(".msg.msg-assistant.streaming").length).toBe(1);
     onDisconnect();
-    // After disconnect the bubble no longer has the .streaming class —
-    // it's frozen as whatever text it had, no longer painting deltas.
+    // Bubble retained (text was streamed) but no longer marked streaming.
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(1);
     expect(document.querySelectorAll(".msg.msg-assistant.streaming").length).toBe(0);
-    // Subsequent STREAM_DELTA for the dead stream id is silently ignored
-    // because state.streaming is null.
+    // Subsequent STREAM_DELTA for the dead stream id is silently ignored.
     handleMsg({ type: "STREAM_DELTA", id: "sDisc", text: "should not append" });
-    // No need to wait for the reconnect timer; the streaming-state cleanup
-    // is synchronous in onDisconnect.
+  });
+
+  it("disconnect with no streamed text yet removes the empty placeholder bubble", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "sEmptyDisc" });
+    // No STREAM_DELTA — bubble has no text yet.
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(1);
+    onDisconnect();
+    // Empty placeholder is removed entirely so the user isn't left looking
+    // at a blank bubble that will never be filled.
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(0);
   });
 });
 

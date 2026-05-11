@@ -66,7 +66,14 @@ function connectPort() {
     // reconnect doesn't try to keep painting deltas into a stale bubble.
     if (state.streaming) {
       if (state.streaming.rafHandle) cancelAnimationFrame(state.streaming.rafHandle);
-      state.streaming.el.classList.remove("streaming");
+      if (state.streaming.text.length === 0) {
+        // No text rendered yet — drop the empty placeholder bubble so the
+        // user isn't left looking at a blank assistant message that will
+        // never be filled. Mirrors finalizeStreamingMessage().
+        state.streaming.el.remove();
+      } else {
+        state.streaming.el.classList.remove("streaming");
+      }
       state.streaming = null;
     }
     state.pendingPreviewId = null;
