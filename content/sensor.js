@@ -649,7 +649,8 @@
           let idx = src.indexOf(compare);
           while (idx !== -1 && matches.length < 20) {
             const matchText = node.textContent.substring(idx, idx + needle.length);
-            let x = 0, y = 0;
+            let x = 0,
+              y = 0;
             try {
               const range = document.createRange();
               range.setStart(node, idx);
@@ -675,7 +676,10 @@
         if (!el) return Promise.resolve({ error: "Element not found", selector: msg.selector });
         return scrollIntoViewIfNeeded(el).then(() => {
           el.focus();
-          return { success: true, focused: getLabel(el) || msg.selector || `element[${msg.elementIndex}]` };
+          return {
+            success: true,
+            focused: getLabel(el) || msg.selector || `element[${msg.elementIndex}]`,
+          };
         });
       }
 

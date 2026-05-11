@@ -288,7 +288,10 @@ const BROWSER_TOOLS = [
     input_schema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "Memory entry id (first 8 chars of the UUID are shown in recall)." },
+        id: {
+          type: "string",
+          description: "Memory entry id (first 8 chars of the UUID are shown in recall).",
+        },
       },
       required: ["id"],
     },
@@ -431,7 +434,13 @@ function buildSystemPrompt() {
 async function executeTool(toolName, toolInput) {
   const tabId = state.currentTabId;
   const NO_TAB_TOOLS = new Set([
-    "navigate", "get_tab_info", "remember", "recall", "forget", "new_tab", "close_tab",
+    "navigate",
+    "get_tab_info",
+    "remember",
+    "recall",
+    "forget",
+    "new_tab",
+    "close_tab",
   ]);
   if (!tabId && !NO_TAB_TOOLS.has(toolName)) {
     return { error: "No active tab." };

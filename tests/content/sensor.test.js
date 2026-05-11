@@ -1181,7 +1181,12 @@ describe("sensor: ACTION_SET_VALUE", () => {
     const events = [];
     document.getElementById("v").addEventListener("input", () => events.push("input"));
     document.getElementById("v").addEventListener("change", () => events.push("change"));
-    const r = await send({ type: "ACTION_SET_VALUE", selector: "#v", elementIndex: null, value: "42" });
+    const r = await send({
+      type: "ACTION_SET_VALUE",
+      selector: "#v",
+      elementIndex: null,
+      value: "42",
+    });
     expect(r.success).toBe(true);
     expect(r.value).toBe("42");
     expect(document.getElementById("v").value).toBe("42");
@@ -1192,7 +1197,12 @@ describe("sensor: ACTION_SET_VALUE", () => {
   it("sets value on a textarea", async () => {
     document.body.innerHTML = "<textarea id='ta'></textarea>";
     await send({ type: "SENSOR_READ" });
-    const r = await send({ type: "ACTION_SET_VALUE", selector: "#ta", elementIndex: null, value: "hello" });
+    const r = await send({
+      type: "ACTION_SET_VALUE",
+      selector: "#ta",
+      elementIndex: null,
+      value: "hello",
+    });
     expect(r.success).toBe(true);
     expect(document.getElementById("ta").value).toBe("hello");
   });
@@ -1200,7 +1210,12 @@ describe("sensor: ACTION_SET_VALUE", () => {
   it("returns error when element not found", async () => {
     document.body.innerHTML = "";
     await send({ type: "SENSOR_READ" });
-    const r = await send({ type: "ACTION_SET_VALUE", selector: "#nope", elementIndex: null, value: "x" });
+    const r = await send({
+      type: "ACTION_SET_VALUE",
+      selector: "#nope",
+      elementIndex: null,
+      value: "x",
+    });
     expect(r.error).toBeTruthy();
   });
 
@@ -1209,14 +1224,20 @@ describe("sensor: ACTION_SET_VALUE", () => {
     await send({ type: "SENSOR_READ" });
     const orig = Object.getOwnPropertyDescriptor;
     const spy = vi.spyOn(Object, "getOwnPropertyDescriptor").mockImplementation((obj, prop) => {
-      if (prop === "value" && (obj === HTMLInputElement.prototype || obj === HTMLTextAreaElement.prototype)) {
+      if (
+        prop === "value" &&
+        (obj === HTMLInputElement.prototype || obj === HTMLTextAreaElement.prototype)
+      ) {
         return undefined;
       }
       return orig.call(Object, obj, prop);
     });
     try {
       const r = await send({
-        type: "ACTION_SET_VALUE", selector: "#nosetter", elementIndex: null, value: "fallback",
+        type: "ACTION_SET_VALUE",
+        selector: "#nosetter",
+        elementIndex: null,
+        value: "fallback",
       });
       expect(r.success).toBe(true);
       expect(r.value).toBe("fallback");

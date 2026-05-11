@@ -517,7 +517,10 @@ describe("executeTool", () => {
 
   it("remember stores an entry in state.memories and persists it", async () => {
     bridge.state.memories = [];
-    const r = await bridge.executeTool("remember", { content: "user likes dark mode", key: "theme" });
+    const r = await bridge.executeTool("remember", {
+      content: "user likes dark mode",
+      key: "theme",
+    });
     expect(r.success).toBe(true);
     expect(typeof r.id).toBe("string");
     expect(bridge.state.memories).toHaveLength(1);
@@ -597,7 +600,10 @@ describe("executeTool", () => {
     await Promise.resolve(); // flush tabs.create microtask so sleep(1500) is registered
     vi.advanceTimersByTime(1500);
     const r = await p;
-    expect(globalThis.browser.tabs.create).toHaveBeenCalledWith({ url: "https://example.com", windowId: 3 });
+    expect(globalThis.browser.tabs.create).toHaveBeenCalledWith({
+      url: "https://example.com",
+      windowId: 3,
+    });
     expect(r.tab_id).toBe(56);
     bridge.state.currentWindowId = null;
     vi.useRealTimers();
@@ -650,7 +656,11 @@ describe("executeTool", () => {
   // ── new sensor-backed tools ───────────────────────────────────────────────
 
   it("find_on_page sends SENSOR_FIND_TEXT to the content script", async () => {
-    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ found: true, count: 2, matches: [] });
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({
+      found: true,
+      count: 2,
+      matches: [],
+    });
     bridge.state.currentTabId = 1;
     const r = await bridge.executeTool("find_on_page", { text: "hello", case_sensitive: true });
     expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
@@ -662,7 +672,11 @@ describe("executeTool", () => {
   });
 
   it("find_on_page defaults caseSensitive to false when case_sensitive is omitted", async () => {
-    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ found: false, count: 0, matches: [] });
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({
+      found: false,
+      count: 0,
+      matches: [],
+    });
     bridge.state.currentTabId = 1;
     await bridge.executeTool("find_on_page", { text: "hello" });
     expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
@@ -676,7 +690,9 @@ describe("executeTool", () => {
     globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ text: "selected text" });
     bridge.state.currentTabId = 1;
     const r = await bridge.executeTool("get_selection", {});
-    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, { type: "SENSOR_GET_SELECTION" });
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "SENSOR_GET_SELECTION",
+    });
     expect(r.text).toBe("selected text");
   });
 
