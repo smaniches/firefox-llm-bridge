@@ -53,6 +53,7 @@ describe("module-level side effects", () => {
   it("creates the context menu", () => {
     expect(globalThis.browser.contextMenus.create).toHaveBeenCalledWith(
       expect.objectContaining({ id: "bridge-explain", contexts: ["selection"] }),
+      expect.any(Function),
     );
   });
 
@@ -462,6 +463,85 @@ describe("executeTool", () => {
 });
 
 describe("persistence", () => {
+  describe("persistableHistory", () => {
+    it("keeps plain user strings unchanged", () => {
+      expect(bridge.persistableHistory([{ role: "user", content: "hi" }])).toEqual([
+        { role: "user", content: "hi" },
+      ]);
+    });
+
+    it("preserves text blocks inside a mixed user content array (text + image)", () => {
+      const out = bridge.persistableHistory([
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "look at this:" },
+            { type: "image", dataUrl: "data:image/png;base64,big-payload" },
+          ],
+        },
+      ]);
+      expect(out).toEqual([{ role: "user", content: "look at this:" }]);
+    });
+
+    it("drops a user array with no text content (image-only continuation)", () => {
+      const out = bridge.persistableHistory([
+        {
+          role: "user",
+          content: [{ type: "image", dataUrl: "data:image/png;base64,xxx" }],
+        },
+      ]);
+      expect(out).toEqual([]);
+    });
+
+    it("drops an empty user string", () => {
+      expect(bridge.persistableHistory([{ role: "user", content: "" }])).toEqual([]);
+    });
+
+    it("flattens assistant arrays to their text content", () => {
+      const out = bridge.persistableHistory([
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "answer:" },
+            { type: "tool_use", id: "t", name: "x", input: {} },
+            { type: "text", text: " done" },
+          ],
+        },
+      ]);
+      expect(out).toEqual([{ role: "assistant", content: "answer: done" }]);
+    });
+
+    it("drops assistant turns with no text content (pure tool calls)", () => {
+      const out = bridge.persistableHistory([
+        {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "t", name: "x", input: {} }],
+        },
+      ]);
+      expect(out).toEqual([]);
+    });
+
+    it("drops empty assistant strings", () => {
+      expect(bridge.persistableHistory([{ role: "assistant", content: "" }])).toEqual([]);
+    });
+
+    it("skips messages with unknown roles (e.g. system, tool)", () => {
+      const out = bridge.persistableHistory([
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "tool", content: "result" },
+        { role: "user", content: "hi" },
+      ]);
+      expect(out).toEqual([{ role: "user", content: "hi" }]);
+    });
+
+    it("tolerates null entries inside content arrays", () => {
+      const out = bridge.persistableHistory([
+        { role: "user", content: [null, { type: "text", text: "ok" }] },
+      ]);
+      expect(out).toEqual([{ role: "user", content: "ok" }]);
+    });
+  });
+
   it("persistSession writes conversationHistory + cost + turnCount to storage", async () => {
     bridge.state.conversationHistory = [{ role: "user", content: "hi" }];
     bridge.state.cost = { sessionUsd: 0.12, promptTokens: 5, completionTokens: 7 };
@@ -1513,5 +1593,28 @@ describe("context menu", () => {
     const before = globalThis.browser.sidebarAction.open.mock.calls.length;
     await handler({ menuItemId: "other" });
     expect(globalThis.browser.sidebarAction.open.mock.calls.length).toBe(before);
+  });
+
+  it("invokes the create callback so runtime.lastError is touched", () => {
+    const call = globalThis.browser.contextMenus.create.mock.calls.find(
+      (c) => c[0]?.id === "bridge-explain",
+    );
+    expect(typeof call[1]).toBe("function");
+    // The callback executes safely — no throw.
+    expect(() => call[1]()).not.toThrow();
+  });
+
+  it("tolerates contextMenus.create throwing on duplicate id (service-worker restart)", async () => {
+    // Re-import the module with contextMenus.create rigged to throw on the
+    // second registration. The module-level catch must swallow it so the
+    // rest of the side effects (onConnect, storage.onChanged) still run.
+    vi.resetModules();
+    let calls = 0;
+    globalThis.browser.contextMenus.create.mockImplementationOnce(() => {
+      calls++;
+      throw new Error("Cannot create item with duplicate id bridge-explain");
+    });
+    await expect(import("../../background/background.js")).resolves.toBeDefined();
+    expect(calls).toBe(1);
   });
 });

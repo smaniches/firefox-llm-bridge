@@ -79,6 +79,30 @@ describe("sidebar: connection lifecycle", () => {
     expect(globalThis.browser.runtime.connect.mock.calls.length).toBe(before + 1);
     vi.useRealTimers();
   });
+
+  it("disconnect during an active stream clears streaming state (with text)", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "sDisc" });
+    handleMsg({ type: "STREAM_DELTA", id: "sDisc", text: "x" });
+    expect(document.querySelectorAll(".msg.msg-assistant.streaming").length).toBe(1);
+    onDisconnect();
+    // Bubble retained (text was streamed) but no longer marked streaming.
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(1);
+    expect(document.querySelectorAll(".msg.msg-assistant.streaming").length).toBe(0);
+    // Subsequent STREAM_DELTA for the dead stream id is silently ignored.
+    handleMsg({ type: "STREAM_DELTA", id: "sDisc", text: "should not append" });
+  });
+
+  it("disconnect with no streamed text yet removes the empty placeholder bubble", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "sEmptyDisc" });
+    // No STREAM_DELTA — bubble has no text yet.
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(1);
+    onDisconnect();
+    // Empty placeholder is removed entirely so the user isn't left looking
+    // at a blank bubble that will never be filled.
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(0);
+  });
 });
 
 describe("sidebar: STATUS handling", () => {
@@ -460,9 +484,42 @@ describe("sidebar: streaming + cost", () => {
     expect(el).not.toBeNull();
     expect(el.classList.contains("streaming")).toBe(false);
     expect(el.textContent).toBe("hi");
-    // Subsequent ASSISTANT_TEXT now renders normally
-    handleMsg({ type: "ASSISTANT_TEXT", text: "final" });
+    // ASSISTANT_TEXT with text differing from the just-streamed text DOES
+    // render (e.g. a "turn limit reached" system message that comes after).
+    handleMsg({ type: "ASSISTANT_TEXT", text: "different follow-up" });
     expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(2);
+  });
+
+  it("suppresses the duplicate ASSISTANT_TEXT that immediately follows a stream", async () => {
+    // The agent loop emits both STREAM_END and a trailing ASSISTANT_TEXT
+    // carrying the same text. Without suppression, every assistant turn
+    // would render twice.
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "sDup" });
+    handleMsg({ type: "STREAM_DELTA", id: "sDup", text: "hello world" });
+    handleMsg({ type: "STREAM_END", id: "sDup" });
+    handleMsg({ type: "ASSISTANT_TEXT", text: "hello world" });
+    // Exactly ONE bubble, not two.
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(1);
+  });
+
+  it("only the FIRST matching ASSISTANT_TEXT is suppressed (next renders)", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "sOnce" });
+    handleMsg({ type: "STREAM_DELTA", id: "sOnce", text: "x" });
+    handleMsg({ type: "STREAM_END", id: "sOnce" });
+    handleMsg({ type: "ASSISTANT_TEXT", text: "x" }); // suppressed
+    handleMsg({ type: "ASSISTANT_TEXT", text: "x" }); // second copy renders
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(2);
+  });
+
+  it("empty stream lets the following ASSISTANT_TEXT render normally", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "sEmpty" });
+    handleMsg({ type: "STREAM_END", id: "sEmpty" });
+    handleMsg({ type: "ASSISTANT_TEXT", text: "fallback text" });
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(1);
+    expect(document.querySelector(".msg.msg-assistant").textContent).toBe("fallback text");
   });
 
   it("rAF callback that fires after STREAM_END is a no-op (no orphan paint)", async () => {
