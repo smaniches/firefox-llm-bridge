@@ -264,8 +264,7 @@ function setMode(next) {
 function bindQuick() {
   document.querySelectorAll(".quick-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      inputText.value =
-        /** @type {HTMLElement} */ (btn).dataset.action ?? /* v8 ignore next */ "";
+      inputText.value = /** @type {HTMLElement} */ (btn).dataset.action ?? /* v8 ignore next */ "";
       setMode("chat");
       sendMessage();
     });
