@@ -1246,3 +1246,56 @@ describe("sensor: ACTION_SET_VALUE", () => {
     }
   });
 });
+
+// ── New tools: SENSOR_ELEMENT_EXISTS and ACTION_EXECUTE_SCRIPT ─────────────
+
+describe("sensor: SENSOR_ELEMENT_EXISTS", () => {
+  it("returns exists:true when selector matches an element", async () => {
+    document.body.innerHTML = "<div id='target'>x</div>";
+    const r = await send({ type: "SENSOR_ELEMENT_EXISTS", selector: "#target" });
+    expect(r).toEqual({ exists: true });
+  });
+
+  it("returns exists:false when selector does not match", async () => {
+    document.body.innerHTML = "<div id='other'>x</div>";
+    const r = await send({ type: "SENSOR_ELEMENT_EXISTS", selector: "#missing" });
+    expect(r).toEqual({ exists: false });
+  });
+
+  it("returns exists:false when selector is absent from the message", async () => {
+    const r = await send({ type: "SENSOR_ELEMENT_EXISTS" });
+    expect(r).toEqual({ exists: false });
+  });
+
+  it("returns exists:false when selector is syntactically invalid", async () => {
+    // querySelector throws SyntaxError on bad CSS — the handler must swallow it.
+    const r = await send({ type: "SENSOR_ELEMENT_EXISTS", selector: "!!invalid##" });
+    expect(r).toEqual({ exists: false });
+  });
+});
+
+describe("sensor: ACTION_EXECUTE_SCRIPT", () => {
+  it("evaluates an expression and returns the result", async () => {
+    const r = await send({ type: "ACTION_EXECUTE_SCRIPT", code: "1 + 2" });
+    expect(r).toEqual({ success: true, result: 3 });
+  });
+
+  it("serialises null when the expression returns undefined", async () => {
+    const r = await send({ type: "ACTION_EXECUTE_SCRIPT", code: "undefined" });
+    expect(r).toEqual({ success: true, result: null });
+  });
+
+  it("returns an error string when the expression throws at runtime", async () => {
+    // Use an IIFE that throws so new Function(`return (...)`)() throws at call time.
+    const r = await send({
+      type: "ACTION_EXECUTE_SCRIPT",
+      code: "(() => { throw new Error('oops'); })()",
+    });
+    expect(r.error).toMatch(/oops/);
+  });
+
+  it("returns an error string for syntactically invalid code", async () => {
+    const r = await send({ type: "ACTION_EXECUTE_SCRIPT", code: "}{{{bad" });
+    expect(typeof r.error).toBe("string");
+  });
+});

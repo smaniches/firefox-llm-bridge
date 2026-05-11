@@ -779,6 +779,74 @@ describe("executeTool", () => {
     const r = await bridge.executeTool("set_value", { value: "42" });
     expect(r.error).toMatch(/selector.*element_index|element_index.*selector/i);
   });
+
+  // ── execute_script ────────────────────────────────────────────────────────
+
+  it("execute_script dispatches ACTION_EXECUTE_SCRIPT to the content script", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ success: true, result: 42 });
+    bridge.state.currentTabId = 1;
+    const r = await bridge.executeTool("execute_script", { code: "21 + 21" });
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "ACTION_EXECUTE_SCRIPT",
+      code: "21 + 21",
+    });
+    expect(r.result).toBe(42);
+  });
+
+  // ── wait_for_element ──────────────────────────────────────────────────────
+
+  it("wait_for_element returns found:true when element exists on the first poll", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ exists: true });
+    bridge.state.currentTabId = 1;
+    const r = await bridge.executeTool("wait_for_element", { selector: "#btn", timeout_ms: 5000 });
+    expect(globalThis.browser.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      type: "SENSOR_ELEMENT_EXISTS",
+      selector: "#btn",
+    });
+    expect(r).toEqual({ success: true, found: true });
+  });
+
+  it("wait_for_element returns found:true after retries", async () => {
+    // First poll: not present. Second poll: present.
+    globalThis.browser.tabs.sendMessage
+      .mockResolvedValueOnce({ exists: false })
+      .mockResolvedValueOnce({ exists: true });
+    bridge.state.currentTabId = 1;
+    vi.useFakeTimers();
+    const p = bridge.executeTool("wait_for_element", { selector: ".result", timeout_ms: 2000 });
+    // Let the first sendMessage resolve, then advance past the 200 ms sleep.
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(200);
+    const r = await p;
+    expect(r).toEqual({ success: true, found: true });
+    vi.useRealTimers();
+  });
+
+  it("wait_for_element returns found:false on timeout", async () => {
+    // Always not present.
+    globalThis.browser.tabs.sendMessage.mockResolvedValue({ exists: false });
+    bridge.state.currentTabId = 1;
+    vi.useFakeTimers();
+    const p = bridge.executeTool("wait_for_element", { selector: "#never", timeout_ms: 400 });
+    // Advance well past the timeout.
+    await vi.advanceTimersByTimeAsync(600);
+    const r = await p;
+    expect(r.success).toBe(false);
+    expect(r.found).toBe(false);
+    expect(r.reason).toMatch(/Timeout/);
+    vi.useRealTimers();
+  });
+
+  it("wait_for_element uses 5000 ms default when timeout_ms is omitted", async () => {
+    globalThis.browser.tabs.sendMessage.mockResolvedValue({ exists: false });
+    bridge.state.currentTabId = 1;
+    vi.useFakeTimers();
+    const p = bridge.executeTool("wait_for_element", { selector: "#x" });
+    await vi.advanceTimersByTimeAsync(5200);
+    const r = await p;
+    expect(r.found).toBe(false);
+    vi.useRealTimers();
+  });
 });
 
 describe("persistence", () => {
@@ -1001,8 +1069,9 @@ describe("persistence", () => {
 });
 
 describe("trimHistory", () => {
-  it("drops oldest user/assistant pairs when over maxHistory", () => {
-    bridge.state.maxHistory = 4;
+  it("preserves first message + tombstone + recent tail when over maxHistory", () => {
+    // max=6: first(1) + tombstone(1) + recent(odd ≤4 → 3) = capacity used correctly
+    bridge.state.maxHistory = 6;
     bridge.state.conversationHistory = [
       { role: "user", content: "u1" },
       { role: "assistant", content: "a1" },
@@ -1010,14 +1079,20 @@ describe("trimHistory", () => {
       { role: "assistant", content: "a2" },
       { role: "user", content: "u3" },
       { role: "assistant", content: "a3" },
+      { role: "user", content: "u4" },
+      { role: "assistant", content: "a4" },
     ];
     bridge.trimHistory();
-    expect(bridge.state.conversationHistory).toEqual([
-      { role: "user", content: "u2" },
-      { role: "assistant", content: "a2" },
-      { role: "user", content: "u3" },
-      { role: "assistant", content: "a3" },
-    ]);
+    const h = bridge.state.conversationHistory;
+    // First message preserved
+    expect(h[0]).toEqual({ role: "user", content: "u1" });
+    // Tombstone is an assistant message describing the gap
+    expect(h[1].role).toBe("assistant");
+    expect(h[1].content).toMatch(/Context compacted/);
+    // Tail starts with user, ends with the last message
+    expect(h[h.length - 1]).toEqual({ role: "assistant", content: "a4" });
+    // Total length does not exceed max
+    expect(h.length).toBeLessThanOrEqual(6);
   });
 
   it("is a no-op when history is under the cap", () => {
@@ -1025,6 +1100,34 @@ describe("trimHistory", () => {
     bridge.state.conversationHistory = [{ role: "user", content: "x" }];
     bridge.trimHistory();
     expect(bridge.state.conversationHistory).toHaveLength(1);
+  });
+
+  it("falls back to pair-splicing when max < 4 (even excess)", () => {
+    bridge.state.maxHistory = 2;
+    bridge.state.conversationHistory = [
+      { role: "user", content: "u1" },
+      { role: "assistant", content: "a1" },
+      { role: "user", content: "u2" },
+      { role: "assistant", content: "a2" },
+    ];
+    bridge.trimHistory();
+    expect(bridge.state.conversationHistory).toHaveLength(2);
+    expect(bridge.state.conversationHistory[0].content).toBe("u2");
+  });
+
+  it("falls back to pair-splicing when max < 4 (odd excess — aligns to pair boundary)", () => {
+    // length=5, max=2 → excess=3 (odd) → splice 4, leaving 1 item
+    bridge.state.maxHistory = 2;
+    bridge.state.conversationHistory = [
+      { role: "user", content: "u1" },
+      { role: "assistant", content: "a1" },
+      { role: "user", content: "u2" },
+      { role: "assistant", content: "a2" },
+      { role: "user", content: "u3" },
+    ];
+    bridge.trimHistory();
+    expect(bridge.state.conversationHistory).toHaveLength(1);
+    expect(bridge.state.conversationHistory[0].content).toBe("u3");
   });
 });
 
@@ -1353,6 +1456,32 @@ describe("runAgentLoop", () => {
       (m) => Array.isArray(m.content) && m.content[0]?.type === "tool_result",
     );
     expect(trMsg.content[0].content.length).toBeLessThan(50_200);
+  });
+
+  it("wraps extract_text result in untrusted framing (injection scan disabled)", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValue({
+      maxTurns: 25,
+      safetyPolicy: { previewMode: "off", warnOnInjectionPatterns: false },
+    });
+    providers.callLLM
+      .mockResolvedValueOnce({
+        content: [{ type: "tool_use", id: "t1", name: "extract_text", input: {} }],
+        stop_reason: "tool_use",
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "done" }],
+        stop_reason: "end_turn",
+      });
+    globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ text: "page text here" });
+    bridge.state.currentTabId = 1;
+    const port = makePort();
+    await bridge.runAgentLoop("extract", port);
+
+    const trMsg = bridge.state.conversationHistory.find(
+      (m) => Array.isArray(m.content) && m.content[0]?.type === "tool_result",
+    );
+    expect(trMsg.content[0].content).toContain("UNTRUSTED PAGE CONTENT");
+    expect(trMsg.content[0].content).toContain("page text here");
   });
 
   it("denies navigate when the model omits the url", async () => {
