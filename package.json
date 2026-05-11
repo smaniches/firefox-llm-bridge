@@ -1,0 +1,50 @@
+{
+  "name": "firefox-llm-bridge",
+  "version": "0.2.0",
+  "private": true,
+  "description": "The first AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs.",
+  "author": {
+    "name": "Santiago Maniches",
+    "email": "hello@topologica.app",
+    "url": "https://topologica.app"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/smaniches/firefox-llm-bridge",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smaniches/firefox-llm-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/smaniches/firefox-llm-bridge/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run lint && npm run lint:webext && npm run typecheck && npm run test:coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:webext": "web-ext lint --source-dir . --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig'",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig' 'CLAUDE.md'",
+    "dev": "web-ext run --source-dir . --browser-console"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/firefox-webext-browser": "^120.0.4",
+    "@vitest/coverage-v8": "^3.0.4",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "jsdom": "^26.0.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.4",
+    "web-ext": "^8.3.0"
+  }
+}

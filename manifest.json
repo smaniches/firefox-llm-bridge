@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Firefox LLM Bridge",
   "version": "0.2.0",
-  "description": "The first AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs.",
+  "description": "An open-source AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs (Ollama, Claude, GPT, Gemini).",
   "author": "Santiago Maniches / TOPOLOGICA LLC",
   "homepage_url": "https://topologica.app",
   "default_locale": "en",

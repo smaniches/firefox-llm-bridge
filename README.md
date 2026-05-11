@@ -6,11 +6,11 @@
 [![CI](https://github.com/smaniches/firefox-llm-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/smaniches/firefox-llm-bridge/actions/workflows/ci.yml)
 [![Code style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://github.com/prettier/prettier)
 
-**The first AI browser agent for Mozilla Firefox.**
+An open-source AI browser agent for Mozilla Firefox, written as a Manifest V3 WebExtension with no bundler and zero runtime dependencies.
 
-Chrome has Claude in Chrome. Firefox had nothing. Until now.
+It connects Firefox to a local model (via Ollama) or a cloud model (Anthropic Claude, OpenAI GPT, Google Gemini) and lets the model read, navigate, and act on the page through a semantic accessibility map.
 
-Navigate, extract, and automate with any LLM: local (Ollama) or cloud (Claude, GPT-4o, Gemini).
+> **Status:** v0.2.0 — pre-release. Working through public-quality milestones (test coverage, CI/CD, AMO submission) tracked in [ROADMAP](docs/ROADMAP.md) and [CHANGELOG](CHANGELOG.md).
 
 ---
 

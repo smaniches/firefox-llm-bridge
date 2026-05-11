@@ -137,13 +137,15 @@ Both are local HTML files loaded under `moz-extension://` origin. They:
 
 ## Code Quality
 
-- ESLint with `eslint:recommended` config — `npm run lint`
-- Prettier formatter — `npm run format:check`
-- JSDoc on every exported function, type-checked via `tsc --noEmit` — `npm run typecheck`
-- 100% test coverage threshold enforced — `npm run test:coverage`
-- `web-ext lint` clean — `npm run lint:webext`
+The repository ships scripts for the following local checks (each defined in `package.json`):
 
-All four commands are run on every PR by GitHub Actions.
+- `npm run lint` — ESLint with `eslint:recommended` configuration
+- `npm run format:check` — Prettier
+- `npm run typecheck` — JSDoc-based type checking via `tsc --noEmit`
+- `npm run test:coverage` — Vitest with a 100% coverage threshold configured in `vitest.config.js`
+- `npm run lint:webext` — Mozilla's `web-ext lint`
+
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs these on every push and pull request once the repository moves to public/CI-enabled mode. Until then, these can be reproduced locally with the commands above.
 
 ## Source Layout
 

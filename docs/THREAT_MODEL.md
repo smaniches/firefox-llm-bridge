@@ -49,7 +49,7 @@ A page the user visits attempts to exfiltrate data or manipulate the agent.
 | Vector | Mitigation |
 |--------|------------|
 | Read API keys from page context | Content script and page share no JS scope. Keys are in `browser.storage.local`, not `window`. |
-| Spoof messages to the background | Content scripts in untrusted contexts cannot impersonate the sidebar port (port name `topologica-sidebar` + `onConnect` origin check). |
+| Spoof messages to the background | The `onConnect` handler rejects ports whose `sender.tab` is set (content-script origin) and ports from other extensions. A content script attempting `browser.runtime.connect({ name: "topologica-sidebar" })` is dropped before any message is processed. This check lives in `background/background.js`. |
 | Inject prompt-injection text targeting the agent | **Partial mitigation only.** Documented in [Known Limitations](#known-limitations) below. |
 | Run scripts during `read_page` | Sensor reads DOM attributes; does not eval inline JS. Setting `value` uses native setter (safe). |
 | Crash the content script with a hostile DOM | Limited to that tab; background worker isolated. |

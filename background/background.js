@@ -268,7 +268,12 @@ async function runChatOnly(userMessage, port) {
 function send(port, msg) { try { port.postMessage(msg); } catch (e) { /* closed */ } }
 
 browser.runtime.onConnect.addListener((port) => {
+  // Reject ports that did not originate from this extension's own pages.
+  // Content scripts attempting to connect carry a populated `port.sender.tab`;
+  // privileged extension pages (sidebar, options) do not.
   if (port.name !== "topologica-sidebar") return;
+  if (port.sender?.tab) return;
+  if (port.sender?.id && port.sender.id !== browser.runtime.id) return;
   port.onMessage.addListener(async (msg) => {
     switch (msg.type) {
       case "SEND_MESSAGE":

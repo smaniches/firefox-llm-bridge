@@ -98,13 +98,28 @@
     scroll();
   }
 
+  const TOOL_ICONS = { read_page:"👁", click_element:"👆", type_text:"⌨", navigate:"🌐", scroll_page:"↕", extract_text:"📄", screenshot:"📸", wait:"⏳", go_back:"↩", get_tab_info:"ℹ", task_complete:"✅" };
+
   function addToolMessage(tool, input, turn) {
     removeWelcome();
-    const icons = { read_page:"👁", click_element:"👆", type_text:"⌨", navigate:"🌐", scroll_page:"↕", extract_text:"📄", screenshot:"📸", wait:"⏳", go_back:"↩", get_tab_info:"ℹ", task_complete:"✅" };
     const div = document.createElement("div");
     div.className = "msg msg-tool";
     div.dataset.turn = turn;
-    div.innerHTML = `<span>${icons[tool]||"⚙"}</span> <span>${tool}</span> <span style="color:var(--text-muted)">${summarize(tool,input)}</span>`;
+
+    // Build via DOM nodes (defense-in-depth: tool name + summary come from the
+    // LLM, which is influenced by attacker-controlled page content).
+    const iconSpan = document.createElement("span");
+    iconSpan.textContent = TOOL_ICONS[tool] || "⚙";
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = tool;
+    const summarySpan = document.createElement("span");
+    summarySpan.style.color = "var(--text-muted)";
+    summarySpan.textContent = " " + summarize(tool, input);
+
+    div.appendChild(iconSpan);
+    div.appendChild(document.createTextNode(" "));
+    div.appendChild(nameSpan);
+    div.appendChild(summarySpan);
     messagesEl.appendChild(div);
     scroll();
   }
@@ -118,7 +133,10 @@
   function addScreenshot(img) {
     const div = document.createElement("div");
     div.className = "msg msg-screenshot";
-    div.innerHTML = `<img src="${img}" alt="Screenshot">`;
+    const el = document.createElement("img");
+    el.src = img;
+    el.alt = "Screenshot";
+    div.appendChild(el);
     messagesEl.appendChild(div);
     scroll();
   }

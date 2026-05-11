@@ -36,14 +36,16 @@ Please include:
 
 ## Response Timeline
 
-| Stage | Target |
-|-------|--------|
-| Initial acknowledgement | 48 hours |
-| Triage and severity rating | 5 business days |
-| Status update cadence | weekly until resolution |
-| Fix release for High/Critical | 14 days from triage |
-| Fix release for Medium | 30 days from triage |
-| Coordinated disclosure window | 90 days |
+These are best-effort targets, not contractual SLAs. This is a small open-source project; please plan accordingly.
+
+| Stage | Target (best effort) |
+|-------|---------------------|
+| Initial acknowledgement | within 5 business days |
+| Triage and severity rating | within 10 business days of acknowledgement |
+| Status updates | as material progress is made |
+| Coordinated disclosure window | 90 days, extendable by mutual agreement |
+
+We will tell you up front if we expect to need more time. We will not silently miss a window.
 
 ## Scope
 

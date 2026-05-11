@@ -6,9 +6,10 @@
  * 1. SENSOR: Extract semantic accessibility map of the page
  * 2. ACTOR: Execute click, type, scroll actions dispatched from background
  *
- * The semantic map is 10x more effective than raw HTML for AI agent comprehension.
- * We walk the DOM extracting ARIA roles, labels, and bounding rects to produce
- * a structured representation that Claude can reason about.
+ * Rather than sending the LLM raw HTML (which is verbose, opaque, and burns
+ * tokens on noise), we walk the DOM and emit a structured map of every
+ * interactive element with ARIA role, label, bounding rect, and CSS selector.
+ * This keeps the model's context focused on actionable nodes.
  */
 
 (() => {
