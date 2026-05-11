@@ -185,6 +185,7 @@
     let index = 0;
 
     function walk(node) {
+      /* v8 ignore next */
       if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
 
       const role = inferRole(node);

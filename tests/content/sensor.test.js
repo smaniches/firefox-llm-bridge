@@ -133,6 +133,14 @@ describe("sensor: SENSOR_READ - role inference", () => {
     expect(r.title).toBeDefined();
   });
 
+  it("falls back to textbox for input types not in the role map (e.g. color, date)", async () => {
+    document.body.innerHTML = `<input type="color" id="c" /><input type="date" id="d" />`;
+    const r = await send({ type: "SENSOR_READ" });
+    // Both should be present and use the fallback role
+    expect(r.elements.length).toBeGreaterThanOrEqual(2);
+    expect(r.elements.every((e) => e.role === "textbox")).toBe(true);
+  });
+
   it("infers roles from input types", async () => {
     document.body.innerHTML = `
       <input type="search" />
@@ -322,6 +330,55 @@ describe("sensor: SENSOR_READ - role inference", () => {
     const r = await send({ type: "SENSOR_READ" });
     expect(r.elements.some((e) => e.selector.includes("#zero"))).toBe(false);
   });
+
+  it("rejects elements with non-fixed/sticky position when offsetParent is null", async () => {
+    document.body.innerHTML = `<button id="abs">X</button>`;
+    const el = document.querySelector("#abs");
+    Object.defineProperty(el, "offsetParent", { value: null, configurable: true });
+    const orig = window.getComputedStyle;
+    window.getComputedStyle = function (n) {
+      if (n === el) {
+        return { display: "block", visibility: "visible", position: "static" };
+      }
+      return orig.call(window, n);
+    };
+    try {
+      const r = await send({ type: "SENSOR_READ" });
+      expect(r.elements.some((e) => e.selector.includes("#abs"))).toBe(false);
+    } finally {
+      window.getComputedStyle = orig;
+    }
+  });
+
+  it("treats position:sticky elements as visible when offsetParent is null", async () => {
+    document.body.innerHTML = `<button id="s">X</button>`;
+    const el = document.querySelector("#s");
+    Object.defineProperty(el, "offsetParent", { value: null, configurable: true });
+    const orig = window.getComputedStyle;
+    window.getComputedStyle = function (n) {
+      if (n === el) {
+        return { display: "block", visibility: "visible", position: "sticky" };
+      }
+      return orig.call(window, n);
+    };
+    try {
+      const r = await send({ type: "SENSOR_READ" });
+      expect(r.elements.some((e) => e.selector.includes("#s"))).toBe(true);
+    } finally {
+      window.getComputedStyle = orig;
+    }
+  });
+
+  it("shows textarea value when set", async () => {
+    document.body.innerHTML = "";
+    const ta = document.createElement("textarea");
+    ta.id = "txt";
+    ta.value = "draft message";
+    document.body.appendChild(ta);
+    const r = await send({ type: "SENSOR_READ" });
+    const entry = r.elements.find((e) => e.selector.includes("#txt"));
+    expect(entry.label).toMatch(/draft message/);
+  });
 });
 
 describe("sensor: getLabel priority", () => {
@@ -473,6 +530,16 @@ describe("sensor: ACTION_CLICK", () => {
   it("returns error when element not found", async () => {
     const r = await send({ type: "ACTION_CLICK", selector: "#nope" });
     expect(r.error).toMatch(/not found/i);
+  });
+
+  it("falls back to element[index] label when getLabel returns empty and no selector given", async () => {
+    document.body.innerHTML = `<div tabindex="0" id="anon"></div>`;
+    await send({ type: "SENSOR_READ" });
+    // Element has no aria-label, no text content, no placeholder, no title.
+    // Clicking by index should report `clicked: element[0]`.
+    const r = await send({ type: "ACTION_CLICK", elementIndex: 0 });
+    expect(r.success).toBe(true);
+    expect(r.clicked).toMatch(/element\[0\]|^#anon$/);
   });
 
   it("scrolls element into view when out of viewport", async () => {

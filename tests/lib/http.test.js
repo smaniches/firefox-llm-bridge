@@ -189,17 +189,29 @@ describe("fetchWithRetry", () => {
   });
 
   it("propagates caller abort with no reason (falls back to the inner error)", async () => {
-    const caller = new AbortController();
-    const fetchImpl = vi.fn(async (_u, init) => {
-      // Mimic browsers that abort() without a reason; the inner fetch sees DOMException
-      const inner = new Error("AbortError");
-      inner.name = "AbortError";
-      caller.abort();
-      throw inner;
+    // Custom signal shape where `aborted` is true but `reason` is undefined,
+    // exercising the `?? e` fallback branch in http.js.
+    const fakeSignal = {
+      aborted: false,
+      reason: undefined,
+      _abort() {
+        this.aborted = true;
+        for (const l of this._listeners) l();
+      },
+      _listeners: [],
+      addEventListener(_e, fn) {
+        this._listeners.push(fn);
+      },
+      removeEventListener() {},
+    };
+    const innerErr = new Error("inner-fetch-fail");
+    const fetchImpl = vi.fn(async () => {
+      fakeSignal._abort();
+      throw innerErr;
     });
     await expect(
-      fetchWithRetry("u", {}, { providerId: "p", fetchImpl, signal: caller.signal, retry: FAST }),
-    ).rejects.toThrow();
+      fetchWithRetry("u", {}, { providerId: "p", fetchImpl, signal: fakeSignal, retry: FAST }),
+    ).rejects.toBe(innerErr);
   });
 
   it("wraps non-Error network throws using String() fallback", async () => {
