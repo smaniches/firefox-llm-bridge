@@ -5,6 +5,7 @@
   "description": "The first AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs.",
   "author": "Santiago Maniches / TOPOLOGICA LLC",
   "homepage_url": "https://topologica.app",
+  "default_locale": "en",
 
   "browser_specific_settings": {
     "gecko": {
@@ -28,11 +29,6 @@
     "webNavigation"
   ],
 
-  "optional_permissions": [
-    "webRequest",
-    "nativeMessaging"
-  ],
-
   "host_permissions": [
     "<all_urls>",
     "http://localhost/*",
@@ -40,7 +36,7 @@
   ],
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://*"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com"
   },
 
   "background": {
@@ -76,12 +72,5 @@
     "32": "icons/icon-32.png",
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
-  },
-
-  "web_accessible_resources": [
-    {
-      "resources": ["content/actor.js"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  }
 }
