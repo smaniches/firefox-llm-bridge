@@ -7,6 +7,13 @@
  */
 
 import { callLLM, buildToolResultMessage, getActiveProviderInfo } from "./providers/index.js";
+import {
+  loadPolicy,
+  isNavigationAllowed,
+  shouldPreview,
+  scanPageContent,
+  frameUntrustedText,
+} from "./lib/policy.js";
 
 const state = {
   conversationHistory: [],
@@ -15,6 +22,10 @@ const state = {
   abortController: null,
   maxTurns: 25,
   turnCount: 0,
+  /** @type {import("./lib/policy.js").SafetyPolicy | null} */
+  policy: null,
+  /** Pending tool preview resolvers, keyed by tool_use id. */
+  pendingPreviews: new Map(),
 };
 
 const BROWSER_TOOLS = [
@@ -109,6 +120,100 @@ const BROWSER_TOOLS = [
   {
     name: "get_tab_info",
     description: "Get current tab URL and title.",
+    input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "hover_element",
+    description:
+      "Hover the mouse over an element. Useful for revealing menus, tooltips, or hover-only buttons.",
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "CSS selector or #id." },
+        element_index: { type: "integer", description: "Index from read_page." },
+        duration_ms: {
+          type: "integer",
+          description: "Milliseconds to dwell before continuing. Default 0. Max 5000.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "press_key",
+    description:
+      "Dispatch a keyboard key press. Use named keys (Enter, Escape, Tab, ArrowDown, ...) or single characters. Optional modifiers (ctrl, alt, shift, meta).",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Named key or single character." },
+        selector: {
+          type: "string",
+          description: "Optional target selector. Defaults to the focused element.",
+        },
+        element_index: { type: "integer", description: "Optional index from read_page." },
+        modifiers: {
+          type: "object",
+          description: "Optional. { ctrl, alt, shift, meta } booleans.",
+          properties: {
+            ctrl: { type: "boolean" },
+            alt: { type: "boolean" },
+            shift: { type: "boolean" },
+            meta: { type: "boolean" },
+          },
+        },
+      },
+      required: ["key"],
+    },
+  },
+  {
+    name: "drag_drop",
+    description: "Drag one element and drop it on another.",
+    input_schema: {
+      type: "object",
+      properties: {
+        from_selector: { type: "string" },
+        from_index: { type: "integer" },
+        to_selector: { type: "string" },
+        to_index: { type: "integer" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "upload_file",
+    description:
+      "Upload a file into an <input type=file>. The file is provided as base64 by the user; do not invent contents.",
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: { type: "string" },
+        element_index: { type: "integer" },
+        file_name: { type: "string" },
+        mime_type: { type: "string" },
+        base64_data: { type: "string", description: "Base64-encoded file bytes." },
+      },
+      required: ["file_name", "base64_data"],
+    },
+  },
+  {
+    name: "list_tabs",
+    description: "List all open tabs in the current window with their URL and title.",
+    input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "switch_tab",
+    description: "Activate a tab by its id (from list_tabs). The agent will then operate on it.",
+    input_schema: {
+      type: "object",
+      properties: { tab_id: { type: "integer", description: "Tab id from list_tabs." } },
+      required: ["tab_id"],
+    },
+  },
+  {
+    name: "screenshot_for_vision",
+    description:
+      "Capture a screenshot and attach it as an image to the next model turn. Use when the accessibility tree is ambiguous (canvas, complex SVG, visual layout).",
     input_schema: { type: "object", properties: {}, required: [] },
   },
   {
@@ -220,6 +325,73 @@ async function executeTool(toolName, toolInput) {
         const tab = await browser.tabs.get(tabId);
         return { url: tab.url, title: tab.title };
       }
+      case "hover_element": {
+        const r = await browser.tabs.sendMessage(tabId, {
+          type: "ACTION_HOVER",
+          selector: toolInput.selector || null,
+          elementIndex: toolInput.element_index ?? null,
+          durationMs: toolInput.duration_ms || 0,
+        });
+        await sleep(150);
+        return r;
+      }
+      case "press_key": {
+        const r = await browser.tabs.sendMessage(tabId, {
+          type: "ACTION_PRESS_KEY",
+          selector: toolInput.selector || null,
+          elementIndex: toolInput.element_index ?? null,
+          key: toolInput.key,
+          modifiers: toolInput.modifiers || {},
+        });
+        await sleep(150);
+        return r;
+      }
+      case "drag_drop": {
+        const r = await browser.tabs.sendMessage(tabId, {
+          type: "ACTION_DRAG_DROP",
+          fromSelector: toolInput.from_selector || null,
+          fromIndex: toolInput.from_index ?? null,
+          toSelector: toolInput.to_selector || null,
+          toIndex: toolInput.to_index ?? null,
+        });
+        await sleep(300);
+        return r;
+      }
+      case "upload_file": {
+        const r = await browser.tabs.sendMessage(tabId, {
+          type: "ACTION_FILE_UPLOAD",
+          selector: toolInput.selector || null,
+          elementIndex: toolInput.element_index ?? null,
+          fileName: toolInput.file_name,
+          mimeType: toolInput.mime_type || "application/octet-stream",
+          base64Data: toolInput.base64_data,
+        });
+        await sleep(150);
+        return r;
+      }
+      case "list_tabs": {
+        const tabs = await browser.tabs.query({ currentWindow: true });
+        return {
+          tabs: tabs.map((t) => ({
+            id: t.id,
+            url: t.url,
+            title: t.title,
+            active: !!t.active,
+          })),
+        };
+      }
+      case "switch_tab": {
+        const id = toolInput.tab_id;
+        await browser.tabs.update(id, { active: true });
+        state.currentTabId = id;
+        await sleep(200);
+        return { success: true, tab_id: id };
+      }
+      case "screenshot_for_vision":
+        return {
+          image: await browser.tabs.captureVisibleTab(null, { format: "png", quality: 85 }),
+          forVision: true,
+        };
       case "task_complete":
         return { complete: true, summary: toolInput.summary };
       default:
@@ -234,6 +406,38 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Send the sidebar a preview prompt for a single tool call and return a
+ * promise that resolves to true (approved) or false (cancelled). The sidebar
+ * replies with `PREVIEW_RESPONSE` which is handled in the port message
+ * dispatcher below.
+ */
+function previewToolCall(port, toolUseId, name, input) {
+  return new Promise((resolve) => {
+    state.pendingPreviews.set(toolUseId, resolve);
+    send(port, { type: "TOOL_PREVIEW", id: toolUseId, tool: name, input });
+  });
+}
+
+/**
+ * After tool results land in conversation history, push a follow-up user
+ * message carrying the screenshot as an `image` content block. Each provider's
+ * formatMessages translates this to its native vision format. Non-vision
+ * models receive a text label instead.
+ */
+function pushPendingVisionImage(history) {
+  if (!state.pendingVisionImage) return;
+  const dataUrl = state.pendingVisionImage;
+  state.pendingVisionImage = null;
+  history.push({
+    role: "user",
+    content: [
+      { type: "image", dataUrl },
+      { type: "text", text: "(Screenshot captured by screenshot_for_vision is above.)" },
+    ],
+  });
+}
+
 // ============================================================
 // AGENT LOOP
 // ============================================================
@@ -242,6 +446,9 @@ async function runAgentLoop(userMessage, port) {
   state.isAgentRunning = true;
   state.turnCount = 0;
   state.abortController = new AbortController();
+  state.policy = await loadPolicy();
+  state.pendingPreviews.clear();
+  state.pendingVisionImage = null;
 
   const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (activeTab) state.currentTabId = activeTab.id;
@@ -293,14 +500,62 @@ async function runAgentLoop(userMessage, port) {
           break;
         }
 
+        // Policy: domain allow/blocklist on navigation.
+        if (b.name === "navigate" && state.policy) {
+          const verdict = isNavigationAllowed(b.input?.url || "", state.policy);
+          if (!verdict.allowed) {
+            const denied = { error: `Navigation denied: ${verdict.reason}`, url: b.input?.url };
+            results.push({
+              tool_use_id: b.id,
+              toolName: b.name,
+              content: JSON.stringify(denied),
+            });
+            send(port, {
+              type: "TOOL_RESULT",
+              tool: b.name,
+              success: false,
+              turn: state.turnCount,
+            });
+            continue;
+          }
+        }
+
+        // Policy: preview gate — surface destructive actions for user OK.
+        if (state.policy && shouldPreview(b.name, state.policy)) {
+          const ok = await previewToolCall(port, b.id, b.name, b.input);
+          if (!ok) {
+            const denied = { error: "Tool call cancelled by user.", tool: b.name };
+            results.push({
+              tool_use_id: b.id,
+              toolName: b.name,
+              content: JSON.stringify(denied),
+            });
+            send(port, {
+              type: "TOOL_RESULT",
+              tool: b.name,
+              success: false,
+              turn: state.turnCount,
+            });
+            continue;
+          }
+        }
+
         const result = await executeTool(b.name, b.input);
-        if (b.name === "screenshot" && result.image)
+        if ((b.name === "screenshot" || b.name === "screenshot_for_vision") && result.image) {
           send(port, { type: "SCREENSHOT", image: result.image });
+        }
 
         let content = JSON.stringify(result);
         if (content.length > 50000) content = content.substring(0, 50000) + "...[truncated]";
-        if (b.name === "screenshot" && result.image)
+        if (b.name === "screenshot" && result.image) {
           content = "Screenshot captured and displayed to user.";
+        }
+        if (b.name === "screenshot_for_vision" && result.image) {
+          // Strip the base64 from the textual tool_result; the next assistant
+          // turn receives the image as a real content block via attachImage().
+          content = "Screenshot attached to next turn as a vision input.";
+          state.pendingVisionImage = result.image;
+        }
 
         results.push({ tool_use_id: b.id, toolName: b.name, content });
         send(port, {
@@ -313,6 +568,7 @@ async function runAgentLoop(userMessage, port) {
 
       if (results.length > 0) {
         state.conversationHistory.push(await buildToolResultMessage(results));
+        pushPendingVisionImage(state.conversationHistory);
       }
     }
 
@@ -336,8 +592,10 @@ async function runAgentLoop(userMessage, port) {
 async function runChatOnly(userMessage, port) {
   state.isAgentRunning = true;
   state.abortController = new AbortController();
+  state.policy = await loadPolicy();
 
   let pageContext = "";
+  let injectionMatches = [];
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (tab) {
@@ -349,9 +607,19 @@ async function runChatOnly(userMessage, port) {
     /* no content script */
   }
 
-  const msg = pageContext
-    ? `[Page content]\n${pageContext}\n\n[Question]\n${userMessage}`
-    : userMessage;
+  if (pageContext && state.policy.warnOnInjectionPatterns) {
+    injectionMatches = scanPageContent(pageContext);
+    if (injectionMatches.length > 0) {
+      send(port, {
+        type: "POLICY_WARNING",
+        patterns: injectionMatches,
+        message: `Page content matched ${injectionMatches.length} heuristic injection pattern(s).`,
+      });
+    }
+  }
+
+  const framed = pageContext ? frameUntrustedText(pageContext, injectionMatches) : "";
+  const msg = framed ? `${framed}\n\n[USER QUESTION]\n${userMessage}` : userMessage;
   state.conversationHistory.push({ role: "user", content: msg });
 
   const info = await getActiveProviderInfo();
@@ -437,6 +705,14 @@ browser.runtime.onConnect.addListener((port) => {
         await loadSettings();
         runChatOnly(msg.text, port);
         break;
+      case "PREVIEW_RESPONSE": {
+        const resolver = state.pendingPreviews.get(msg.id);
+        if (resolver) {
+          state.pendingPreviews.delete(msg.id);
+          resolver(msg.approved === true);
+        }
+        break;
+      }
     }
   });
 });

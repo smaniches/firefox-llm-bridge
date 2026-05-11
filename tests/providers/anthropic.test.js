@@ -56,7 +56,7 @@ describe("anthropic provider", () => {
   });
 
   describe("formatMessages", () => {
-    it("returns messages unchanged (canonical format)", () => {
+    it("passes plain user/assistant strings through unchanged", () => {
       const messages = [
         { role: "user", content: "hello" },
         {
@@ -67,7 +67,34 @@ describe("anthropic provider", () => {
           ],
         },
       ];
-      expect(anthropic.formatMessages(messages)).toBe(messages);
+      const out = anthropic.formatMessages(messages);
+      expect(out).toHaveLength(2);
+      expect(out[0]).toEqual(messages[0]);
+      expect(out[1].content).toEqual(messages[1].content);
+    });
+
+    it("translates image blocks to Anthropic source format", () => {
+      const out = anthropic.formatMessages([
+        {
+          role: "user",
+          content: [
+            { type: "image", dataUrl: "data:image/png;base64,iVBOR" },
+            { type: "text", text: "what is this?" },
+          ],
+        },
+      ]);
+      expect(out[0].content[0]).toEqual({
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "iVBOR" },
+      });
+      expect(out[0].content[1]).toEqual({ type: "text", text: "what is this?" });
+    });
+
+    it("leaves array content without images unchanged", () => {
+      const out = anthropic.formatMessages([
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content: "ok" }] },
+      ]);
+      expect(out[0].content[0].type).toBe("tool_result");
     });
   });
 

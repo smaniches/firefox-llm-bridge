@@ -33,7 +33,7 @@ export default [
     },
     rules: {
       ...js.configs.recommended.rules,
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
       "no-console": ["warn", { allow: ["warn", "error", "info"] }],
       "no-implicit-globals": "error",
       eqeqeq: ["error", "smart"],

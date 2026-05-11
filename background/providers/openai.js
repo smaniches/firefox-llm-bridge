@@ -64,6 +64,21 @@ export const openai = {
                   : JSON.stringify(result.content),
             });
           }
+        } else if (Array.isArray(msg.content)) {
+          // Multi-part user message (text + image). OpenAI represents this as
+          // an array of parts: { type: "text" } / { type: "image_url" }.
+          const parts = msg.content
+            .map((b) => {
+              if (b.type === "image" && b.dataUrl) {
+                return { type: "image_url", image_url: { url: b.dataUrl } };
+              }
+              if (b.type === "text" && typeof b.text === "string") {
+                return { type: "text", text: b.text };
+              }
+              return null;
+            })
+            .filter(Boolean);
+          formatted.push({ role: "user", content: parts });
         } else {
           // Regular user message
           formatted.push({

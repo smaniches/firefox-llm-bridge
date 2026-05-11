@@ -698,3 +698,384 @@ describe("sensor: PING and unknown messages", () => {
     expect(r.error).toMatch(/Unknown message type/i);
   });
 });
+
+describe("sensor: shadow DOM traversal", () => {
+  it("descends into open shadow roots", async () => {
+    const host = document.createElement("div");
+    host.id = "host";
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: "open" });
+    const btn = document.createElement("button");
+    btn.textContent = "Inside Shadow";
+    root.appendChild(btn);
+
+    const r = await send({ type: "SENSOR_READ" });
+    const insideShadow = r.elements.find((e) => e.label === "Inside Shadow");
+    expect(insideShadow).toBeDefined();
+    expect(insideShadow.shadow).toBe(true);
+  });
+
+  it("does not error on closed shadow roots (they appear as null)", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    // Closed shadow root: jsdom supports it; sensor checks node.shadowRoot
+    // which returns null for closed mode, so we just verify no throw.
+    host.attachShadow({ mode: "closed" });
+    await expect(send({ type: "SENSOR_READ" })).resolves.toBeDefined();
+  });
+});
+
+describe("sensor: iframe traversal", () => {
+  it("emits an iframe entry for cross-origin iframes without descending", async () => {
+    const iframe = document.createElement("iframe");
+    iframe.src = "https://other.example.com/page";
+    document.body.appendChild(iframe);
+
+    // Force contentDocument access to throw, simulating cross-origin.
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      get() {
+        throw new DOMException("blocked", "SecurityError");
+      },
+    });
+
+    const r = await send({ type: "SENSOR_READ" });
+    const iframeEntry = r.elements.find((e) => e.role === "iframe");
+    expect(iframeEntry).toBeDefined();
+  });
+
+  it("descends into same-origin iframes", async () => {
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    // Stub the contentDocument so the sensor walks into a body we own in the
+    // current realm (where our prototype patches apply).
+    const fakeBody = document.createElement("div");
+    const innerBtn = document.createElement("button");
+    innerBtn.textContent = "InsideFrame";
+    fakeBody.appendChild(innerBtn);
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      get() {
+        return { body: fakeBody };
+      },
+    });
+
+    const r = await send({ type: "SENSOR_READ" });
+    const inner = r.elements.find((e) => e.label === "InsideFrame");
+    expect(inner).toBeDefined();
+    expect(Array.isArray(inner.frame)).toBe(true);
+  });
+
+  it("tolerates iframes with no contentDocument body", async () => {
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      get() {
+        return { body: null };
+      },
+    });
+    await expect(send({ type: "SENSOR_READ" })).resolves.toBeDefined();
+  });
+});
+
+describe("sensor: ACTION_HOVER", () => {
+  it("dispatches mouseover/mouseenter/mousemove on found element", async () => {
+    const btn = document.createElement("button");
+    btn.id = "h";
+    btn.textContent = "Hover me";
+    document.body.appendChild(btn);
+    await send({ type: "SENSOR_READ" });
+
+    const events = [];
+    for (const ev of ["mouseover", "mouseenter", "mousemove"]) {
+      btn.addEventListener(ev, () => events.push(ev));
+    }
+
+    const r = await send({ type: "ACTION_HOVER", selector: "#h", elementIndex: null });
+    expect(r.success).toBe(true);
+    expect(events).toContain("mouseover");
+    expect(events).toContain("mousemove");
+  });
+
+  it("waits for durationMs (capped at 5000)", async () => {
+    const btn = document.createElement("button");
+    btn.textContent = "x";
+    document.body.appendChild(btn);
+    await send({ type: "SENSOR_READ" });
+
+    const start = Date.now();
+    await send({ type: "ACTION_HOVER", elementIndex: 0, durationMs: 50 });
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeGreaterThanOrEqual(45);
+  });
+
+  it("returns error when element not found", async () => {
+    const r = await send({ type: "ACTION_HOVER", selector: "#missing", elementIndex: null });
+    expect(r.error).toMatch(/not found/i);
+  });
+});
+
+describe("sensor: ACTION_PRESS_KEY", () => {
+  it("dispatches keyboard events on the matched element", async () => {
+    const input = document.createElement("input");
+    input.id = "in";
+    document.body.appendChild(input);
+    await send({ type: "SENSOR_READ" });
+
+    const events = [];
+    input.addEventListener("keydown", (e) => events.push(["down", e.key, e.ctrlKey]));
+    input.addEventListener("keyup", (e) => events.push(["up", e.key]));
+
+    const r = await send({
+      type: "ACTION_PRESS_KEY",
+      selector: "#in",
+      elementIndex: null,
+      key: "a",
+      modifiers: { ctrl: true },
+    });
+    expect(r.success).toBe(true);
+    expect(events).toContainEqual(["down", "a", true]);
+    expect(events).toContainEqual(["up", "a"]);
+  });
+
+  it("falls back to document.activeElement when no target given", async () => {
+    const r = await send({
+      type: "ACTION_PRESS_KEY",
+      selector: null,
+      elementIndex: null,
+      key: "Escape",
+    });
+    expect(r.success).toBe(true);
+    expect(r.key).toBe("Escape");
+  });
+
+  it("handles named keys with keyCode lookup", async () => {
+    const r = await send({ type: "ACTION_PRESS_KEY", key: "ArrowDown" });
+    expect(r.success).toBe(true);
+  });
+
+  it("handles single-character keys via charCodeAt", async () => {
+    const r = await send({ type: "ACTION_PRESS_KEY", key: "x" });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts a missing modifiers object", async () => {
+    const r = await send({ type: "ACTION_PRESS_KEY", key: "Enter" });
+    expect(r.success).toBe(true);
+  });
+});
+
+describe("sensor: ACTION_DRAG_DROP", () => {
+  it("dispatches the full HTML5 drag sequence on success", async () => {
+    const src = document.createElement("div");
+    src.id = "src";
+    src.textContent = "Source";
+    src.setAttribute("role", "button");
+    const dst = document.createElement("div");
+    dst.id = "dst";
+    dst.textContent = "Dest";
+    dst.setAttribute("role", "button");
+    document.body.append(src, dst);
+    await send({ type: "SENSOR_READ" });
+
+    const seen = [];
+    for (const ev of ["dragstart", "drag", "dragenter", "dragover", "drop", "dragend"]) {
+      const target = ev === "dragenter" || ev === "dragover" || ev === "drop" ? dst : src;
+      target.addEventListener(ev, () => seen.push(ev));
+    }
+
+    const r = await send({
+      type: "ACTION_DRAG_DROP",
+      fromSelector: "#src",
+      fromIndex: null,
+      toSelector: "#dst",
+      toIndex: null,
+    });
+    expect(r.success).toBe(true);
+    expect(seen).toContain("dragstart");
+    expect(seen).toContain("drop");
+    expect(seen).toContain("dragend");
+  });
+
+  it("returns error when source missing", async () => {
+    const r = await send({
+      type: "ACTION_DRAG_DROP",
+      fromSelector: "#x",
+      fromIndex: null,
+      toSelector: "#y",
+      toIndex: null,
+    });
+    expect(r.error).toMatch(/Source/);
+  });
+
+  it("returns error when destination missing", async () => {
+    const src = document.createElement("div");
+    src.id = "src2";
+    src.setAttribute("role", "button");
+    src.textContent = "S";
+    document.body.appendChild(src);
+    const r = await send({
+      type: "ACTION_DRAG_DROP",
+      fromSelector: "#src2",
+      fromIndex: null,
+      toSelector: "#missingDst",
+      toIndex: null,
+    });
+    expect(r.error).toMatch(/Destination/);
+  });
+});
+
+describe("sensor: ACTION_FILE_UPLOAD", () => {
+  it("populates the input.files via DataTransfer", async () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.id = "f";
+    document.body.appendChild(input);
+    await send({ type: "SENSOR_READ" });
+
+    const r = await send({
+      type: "ACTION_FILE_UPLOAD",
+      selector: "#f",
+      elementIndex: null,
+      fileName: "hello.txt",
+      mimeType: "text/plain",
+      base64Data: btoa("hello"),
+    });
+    expect(r.success).toBe(true);
+    expect(r.uploaded).toBe("hello.txt");
+    expect(input.files.length).toBe(1);
+    expect(input.files[0].name).toBe("hello.txt");
+  });
+
+  it("defaults mimeType when not given", async () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    document.body.appendChild(input);
+    await send({ type: "SENSOR_READ" });
+    const r = await send({
+      type: "ACTION_FILE_UPLOAD",
+      elementIndex: 0,
+      fileName: "x.bin",
+      base64Data: btoa("x"),
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects non-file inputs", async () => {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = "txt";
+    document.body.appendChild(input);
+    await send({ type: "SENSOR_READ" });
+    const r = await send({
+      type: "ACTION_FILE_UPLOAD",
+      selector: "#txt",
+      elementIndex: null,
+      fileName: "x",
+      mimeType: "text/plain",
+      base64Data: btoa("x"),
+    });
+    expect(r.error).toMatch(/not an <input/);
+  });
+
+  it("returns error when element not found", async () => {
+    const r = await send({
+      type: "ACTION_FILE_UPLOAD",
+      selector: "#none",
+      elementIndex: null,
+      fileName: "x",
+      mimeType: "text/plain",
+      base64Data: btoa("x"),
+    });
+    expect(r.error).toMatch(/not found/);
+  });
+});
+
+describe("sensor: ACTION_HOVER fallback labels and ACTION_PRESS_KEY edge cases", () => {
+  it("hover falls back to selector when label is empty and no index", async () => {
+    const div = document.createElement("div");
+    div.setAttribute("role", "button");
+    div.setAttribute("tabindex", "0");
+    // No id, no text, no aria-label — getLabel returns empty.
+    document.body.appendChild(div);
+
+    // Provide a selector match path: give it a data attribute we can target.
+    div.setAttribute("data-action", "hov");
+    await send({ type: "SENSOR_READ" });
+
+    const r = await send({
+      type: "ACTION_HOVER",
+      selector: '[data-action="hov"]',
+      elementIndex: null,
+    });
+    expect(r.hovered).toBe('[data-action="hov"]');
+  });
+
+  it("hover falls back to element[idx] when neither label nor selector", async () => {
+    const div = document.createElement("div");
+    div.setAttribute("role", "button");
+    div.setAttribute("tabindex", "0");
+    document.body.appendChild(div);
+    await send({ type: "SENSOR_READ" });
+
+    const r = await send({ type: "ACTION_HOVER", selector: null, elementIndex: 0 });
+    expect(r.hovered).toMatch(/element\[0\]/);
+  });
+
+  it("press_key falls back to document.body when no active element exists", async () => {
+    // Force activeElement to null via property override (it normally returns body)
+    const originalActiveElement = Object.getOwnPropertyDescriptor(
+      Document.prototype,
+      "activeElement",
+    );
+    Object.defineProperty(document, "activeElement", { configurable: true, value: null });
+    try {
+      const r = await send({ type: "ACTION_PRESS_KEY", key: "Tab" });
+      expect(r.target).toBe("body");
+    } finally {
+      if (originalActiveElement) {
+        Object.defineProperty(Document.prototype, "activeElement", originalActiveElement);
+      }
+    }
+  });
+});
+
+describe("sensor: resolveElement uses cached ref before selector", () => {
+  it("uses the cached element ref when stored at elementIndex", async () => {
+    const btn = document.createElement("button");
+    btn.id = "cached";
+    btn.textContent = "Cached";
+    document.body.appendChild(btn);
+    const map = await send({ type: "SENSOR_READ" });
+    const idx = map.elements.findIndex((e) => e.label === "Cached");
+
+    // Remove the id so a selector lookup by "#cached" would fail; the cached
+    // ref must still be used.
+    btn.removeAttribute("id");
+
+    const events = [];
+    btn.addEventListener("click", () => events.push("click"));
+    const r = await send({ type: "ACTION_CLICK", selector: null, elementIndex: idx });
+    expect(r.success).toBe(true);
+    expect(events.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to selector when ref is disconnected", async () => {
+    const btn = document.createElement("button");
+    btn.id = "fall";
+    btn.textContent = "Fall";
+    document.body.appendChild(btn);
+    await send({ type: "SENSOR_READ" });
+
+    // Disconnect, then re-create with the same id so selector finds the new one.
+    btn.remove();
+    const replacement = document.createElement("button");
+    replacement.id = "fall";
+    replacement.textContent = "Replacement";
+    document.body.appendChild(replacement);
+
+    const r = await send({ type: "ACTION_CLICK", selector: "#fall", elementIndex: 0 });
+    expect(r.success).toBe(true);
+  });
+});
