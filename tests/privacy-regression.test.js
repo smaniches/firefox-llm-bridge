@@ -12,10 +12,13 @@
 
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-// vitest runs from the package root, so process.cwd() is the repo root.
-const REPO_ROOT = process.cwd();
+// Resolve from this file rather than process.cwd() — robust across CI
+// runners that may invoke vitest from a non-root directory.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, "..");
 const SHIPPED_DIRS = ["background", "content", "sidebar", "options"];
 
 /** Every host the extension is allowed to talk to. Must match manifest CSP. */

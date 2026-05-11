@@ -81,20 +81,19 @@ describe("sidebar: connection lifecycle", () => {
   });
 
   it("disconnect during an active stream clears streaming state", async () => {
-    vi.useFakeTimers();
     await setup();
     handleMsg({ type: "STREAM_START", id: "sDisc" });
     handleMsg({ type: "STREAM_DELTA", id: "sDisc", text: "x" });
-    const beforeMsgs = document.querySelectorAll(".msg.msg-assistant.streaming").length;
-    expect(beforeMsgs).toBe(1);
+    expect(document.querySelectorAll(".msg.msg-assistant.streaming").length).toBe(1);
     onDisconnect();
-    // The bubble no longer has the .streaming class — it's frozen as
-    // whatever text it had, not actively painting deltas.
+    // After disconnect the bubble no longer has the .streaming class —
+    // it's frozen as whatever text it had, no longer painting deltas.
     expect(document.querySelectorAll(".msg.msg-assistant.streaming").length).toBe(0);
-    // Subsequent STREAM_DELTA for the dead id is ignored.
+    // Subsequent STREAM_DELTA for the dead stream id is silently ignored
+    // because state.streaming is null.
     handleMsg({ type: "STREAM_DELTA", id: "sDisc", text: "should not append" });
-    await vi.advanceTimersByTimeAsync(700);
-    vi.useRealTimers();
+    // No need to wait for the reconnect timer; the streaming-state cleanup
+    // is synchronous in onDisconnect.
   });
 });
 
