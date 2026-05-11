@@ -5,6 +5,7 @@ describe("TOOL_ICONS", () => {
   it("covers every tool exposed by the agent", () => {
     expect(Object.keys(TOOL_ICONS).sort()).toEqual([
       "click_element",
+      "download_file",
       "drag_drop",
       "extract_text",
       "get_tab_info",
@@ -199,6 +200,16 @@ describe("summarize", () => {
 
   it("screenshot_for_vision returns static label", () => {
     expect(summarize("screenshot_for_vision", {})).toBe("(image to next turn)");
+  });
+
+  it("download_file shows hostname when url given", () => {
+    expect(summarize("download_file", { url: "https://files.example.com/x.pdf" })).toBe(
+      "↓ files.example.com",
+    );
+  });
+
+  it("download_file empty when url missing", () => {
+    expect(summarize("download_file", {})).toBe("");
   });
 });
 

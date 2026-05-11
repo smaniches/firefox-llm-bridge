@@ -6,6 +6,7 @@ import {
   callLLM,
   buildToolResultMessage,
   getActiveProviderInfo,
+  getActiveModel,
 } from "../../background/providers/index.js";
 
 describe("provider router (index.js)", () => {
@@ -174,6 +175,65 @@ describe("provider router (index.js)", () => {
       });
       const info = await getActiveProviderInfo();
       expect(info.modelName).toBe("gpt-unknown");
+    });
+  });
+
+  describe("getActiveModel", () => {
+    it("returns null when no provider configured", async () => {
+      globalThis.browser.storage.local.get.mockResolvedValueOnce({});
+      expect(await getActiveModel()).toBeNull();
+    });
+
+    it("returns { providerId, model } when configured", async () => {
+      globalThis.browser.storage.local.get.mockResolvedValueOnce({
+        activeProvider: "openai",
+        providers: { openai: { key: "sk-x", model: "gpt-4o-mini" } },
+      });
+      expect(await getActiveModel()).toEqual({ providerId: "openai", model: "gpt-4o-mini" });
+    });
+  });
+
+  describe("callLLM with onTextChunk", () => {
+    it("passes the callback to the active provider as the 8th positional arg", async () => {
+      globalThis.browser.storage.local.get.mockResolvedValueOnce({
+        activeProvider: "openai",
+        providers: { openai: { key: "sk-x", model: "gpt-4o" } },
+      });
+      const stream = new ReadableStream({
+        start(controller) {
+          const enc = new TextEncoder();
+          controller.enqueue(
+            enc.encode('data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}\n\n'),
+          );
+          controller.enqueue(enc.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      globalThis.fetch.mockResolvedValueOnce(
+        new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+      );
+      const chunks = [];
+      await callLLM("sys", [{ role: "user", content: "x" }], [], null, (t) => chunks.push(t));
+      const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
+      expect(body.stream).toBe(true);
+      expect(chunks).toEqual(["hi"]);
+    });
+
+    it("routes to ollama with endpoint as 7th arg and onTextChunk as 8th", async () => {
+      globalThis.browser.storage.local.get.mockResolvedValueOnce({
+        activeProvider: "ollama",
+        providers: { ollama: { endpoint: "http://localhost:11434", model: "llama3.1" } },
+      });
+      globalThis.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          choices: [{ message: { content: "hi" }, finish_reason: "stop" }],
+        }),
+        text: vi.fn().mockResolvedValue(""),
+      });
+      const r = await callLLM("sys", [{ role: "user", content: "x" }], [], null);
+      expect(r.content[0].text).toBe("hi");
+      expect(globalThis.fetch.mock.calls[0][0]).toMatch(/localhost:11434/);
     });
   });
 });

@@ -362,6 +362,88 @@ describe("sidebar: pending selection", () => {
   });
 });
 
+describe("sidebar: streaming + cost", () => {
+  it("STREAM_START creates a streaming assistant bubble", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "s1" });
+    const el = document.querySelector(".msg.msg-assistant.streaming");
+    expect(el).not.toBeNull();
+    expect(el.dataset.streamId).toBe("s1");
+  });
+
+  it("STREAM_DELTA appends to the active streaming message", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "s2" });
+    handleMsg({ type: "STREAM_DELTA", id: "s2", text: "Hel" });
+    handleMsg({ type: "STREAM_DELTA", id: "s2", text: "lo" });
+    const el = document.querySelector(".msg.msg-assistant.streaming");
+    expect(el.textContent).toBe("Hello");
+  });
+
+  it("ignores STREAM_DELTA for a different active stream id", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "s3" });
+    handleMsg({ type: "STREAM_DELTA", id: "other", text: "lost" });
+    expect(document.querySelector(".msg.msg-assistant").textContent).toBe("");
+  });
+
+  it("STREAM_END removes the streaming class and resets state", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "s4" });
+    handleMsg({ type: "STREAM_DELTA", id: "s4", text: "hi" });
+    handleMsg({ type: "STREAM_END", id: "s4" });
+    const el = document.querySelector(".msg.msg-assistant");
+    expect(el).not.toBeNull();
+    expect(el.classList.contains("streaming")).toBe(false);
+    // Subsequent ASSISTANT_TEXT now renders normally
+    handleMsg({ type: "ASSISTANT_TEXT", text: "final" });
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(2);
+  });
+
+  it("STREAM_END for an unknown id is a no-op", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_END", id: "missing" });
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(0);
+  });
+
+  it("STREAM_END for an empty stream removes the empty placeholder", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "s5" });
+    handleMsg({ type: "STREAM_END", id: "s5" });
+    expect(document.querySelector(".msg.msg-assistant")).toBeNull();
+  });
+
+  it("during streaming, ASSISTANT_TEXT does not double-render", async () => {
+    await setup();
+    handleMsg({ type: "STREAM_START", id: "s6" });
+    handleMsg({ type: "STREAM_DELTA", id: "s6", text: "ok" });
+    // ASSISTANT_TEXT while streaming: should be suppressed
+    handleMsg({ type: "ASSISTANT_TEXT", text: "ok" });
+    expect(document.querySelectorAll(".msg.msg-assistant").length).toBe(1);
+  });
+
+  it("STATUS with cost populates the cost counter", async () => {
+    await setup();
+    handleMsg({ type: "STATUS", status: "idle", cost: "$0.42" });
+    const cc = document.getElementById("cost-counter");
+    expect(cc.textContent).toBe("$0.42");
+    expect(cc.classList.contains("hidden")).toBe(false);
+  });
+
+  it("STATUS with $0.00 cost hides the counter", async () => {
+    await setup();
+    handleMsg({ type: "STATUS", status: "idle", cost: "$0.42" });
+    handleMsg({ type: "STATUS", status: "idle", cost: "$0.00" });
+    expect(document.getElementById("cost-counter").classList.contains("hidden")).toBe(true);
+  });
+
+  it("STATUS with no cost field leaves counter hidden", async () => {
+    await setup();
+    handleMsg({ type: "STATUS", status: "idle" });
+    expect(document.getElementById("cost-counter").classList.contains("hidden")).toBe(true);
+  });
+});
+
 describe("sidebar: TOOL_PREVIEW overlay", () => {
   it("shows the overlay with tool name and JSON-formatted input", async () => {
     await setup();

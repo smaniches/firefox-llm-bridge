@@ -5,9 +5,12 @@
  * Handles communication with Google's Gemini generateContent API.
  * Tool calls use functionDeclarations with UPPERCASED types,
  * functionCall parts, and functionResponse for results.
+ * Streaming uses the `streamGenerateContent` endpoint variant with SSE.
  */
 
 import { parseDataUrl } from "../lib/vision.js";
+import { readSSE } from "../lib/stream.js";
+import { normalizeUsage } from "../lib/pricing.js";
 
 export const google = {
   id: "google",
@@ -151,14 +154,19 @@ export const google = {
   },
 
   /**
-   * Call Gemini generateContent and return normalized response.
+   * Call Gemini and return a normalized response.
    *
    * SECURITY: The API key is passed via the `x-goog-api-key` header instead
    * of the URL query string. Keys in URLs end up in HTTP server access logs,
    * proxy logs, and browser history; header values do not.
+   *
+   * Streaming uses the `streamGenerateContent` endpoint with `alt=sse`.
    */
-  async call(apiKey, model, systemPrompt, messages, tools, signal) {
-    const url = `${this.endpoint}/${model}:generateContent`;
+  async call(apiKey, model, systemPrompt, messages, tools, signal, _endpoint, onTextChunk) {
+    const stream = typeof onTextChunk === "function";
+    const url = stream
+      ? `${this.endpoint}/${model}:streamGenerateContent?alt=sse`
+      : `${this.endpoint}/${model}:generateContent`;
 
     const body = {
       contents: this.formatMessages(messages),
@@ -171,7 +179,6 @@ export const google = {
       body.tools = this.formatTools(tools);
     }
 
-    // Gemini config
     body.generationConfig = {
       maxOutputTokens: 4096,
       temperature: 0.7,
@@ -192,8 +199,14 @@ export const google = {
       throw new Error(`Gemini API ${response.status}: ${errorBody.substring(0, 200)}`);
     }
 
-    const data = await response.json();
-    return this._normalizeResponse(data);
+    if (!stream) {
+      const data = await response.json();
+      const normalized = this._normalizeResponse(data);
+      normalized.usage = normalizeUsage(data.usageMetadata);
+      return normalized;
+    }
+
+    return await consumeGoogleStream(response, onTextChunk);
   },
 
   /**
@@ -244,3 +257,61 @@ export const google = {
     };
   },
 };
+
+/**
+ * Consume Gemini's `streamGenerateContent?alt=sse` response.
+ *
+ * Each SSE event's `data` is a full `GenerateContentResponse` chunk
+ * containing a candidate whose parts accumulate the response. We forward
+ * each text part to `onTextChunk` and rebuild the unified content array
+ * (text and tool_use blocks) at end-of-stream.
+ *
+ * @param {Response} response
+ * @param {(text: string) => void} onTextChunk
+ */
+async function consumeGoogleStream(response, onTextChunk) {
+  let text = "";
+  /** @type {Array<{type: "tool_use", id: string, name: string, input: any}>} */
+  const toolUses = [];
+  let usage = { promptTokens: 0, completionTokens: 0 };
+  let hadFunctionCall = false;
+
+  for await (const { data } of readSSE(response)) {
+    let evt;
+    try {
+      evt = JSON.parse(data);
+    } catch {
+      continue;
+    }
+
+    if (evt.usageMetadata) usage = normalizeUsage(evt.usageMetadata);
+
+    const parts = evt.candidates?.[0]?.content?.parts;
+    if (!Array.isArray(parts)) continue;
+
+    for (const part of parts) {
+      if (typeof part.text === "string" && part.text.length > 0) {
+        text += part.text;
+        onTextChunk(part.text);
+      } else if (part.functionCall) {
+        hadFunctionCall = true;
+        toolUses.push({
+          type: "tool_use",
+          id: `gemini-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name: part.functionCall.name,
+          input: part.functionCall.args || {},
+        });
+      }
+    }
+  }
+
+  const content = [];
+  if (text.length > 0) content.push({ type: "text", text });
+  for (const tu of toolUses) content.push(tu);
+
+  return {
+    content,
+    stop_reason: hadFunctionCall ? "tool_use" : "end_turn",
+    usage,
+  };
+}

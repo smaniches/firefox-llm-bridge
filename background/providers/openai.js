@@ -5,7 +5,11 @@
  * Handles communication with OpenAI's Chat Completions API.
  * Tool calls use `parameters` under `function`, arguments are JSON strings,
  * tool results are role:"tool" messages.
+ * Streaming is supported via the standard SSE protocol.
  */
+
+import { readSSE } from "../lib/stream.js";
+import { normalizeUsage } from "../lib/pricing.js";
 
 export const openai = {
   id: "openai",
@@ -125,9 +129,16 @@ export const openai = {
   },
 
   /**
-   * Call OpenAI Chat Completions and return normalized response.
+   * Call OpenAI Chat Completions and return a normalized response.
+   *
+   * When `onTextChunk` is provided, the request is made with `stream: true`
+   * and `stream_options: { include_usage: true }` so we get token counts
+   * in the final chunk. The return shape is identical to the non-streaming
+   * path.
    */
-  async call(apiKey, model, systemPrompt, messages, tools, signal) {
+  async call(apiKey, model, systemPrompt, messages, tools, signal, _endpoint, onTextChunk) {
+    const stream = typeof onTextChunk === "function";
+
     const formattedMessages = [
       { role: "system", content: systemPrompt },
       ...this.formatMessages(messages),
@@ -139,9 +150,12 @@ export const openai = {
       max_tokens: 4096,
     };
 
-    // Only include tools if we have them
     if (tools && tools.length > 0) {
       body.tools = this.formatTools(tools);
+    }
+    if (stream) {
+      body.stream = true;
+      body.stream_options = { include_usage: true };
     }
 
     const response = await fetch(this.endpoint, {
@@ -159,15 +173,16 @@ export const openai = {
       throw new Error(`OpenAI API ${response.status}: ${errorBody.substring(0, 200)}`);
     }
 
-    const data = await response.json();
-    const choice = data.choices?.[0];
-
-    if (!choice) {
-      throw new Error("OpenAI returned no choices");
+    if (!stream) {
+      const data = await response.json();
+      const choice = data.choices?.[0];
+      if (!choice) throw new Error("OpenAI returned no choices");
+      const normalized = this._normalizeResponse(choice);
+      normalized.usage = normalizeUsage(data.usage);
+      return normalized;
     }
 
-    // Normalize to our unified format
-    return this._normalizeResponse(choice);
+    return await consumeOpenAIStream(response, onTextChunk);
   },
 
   /**
@@ -223,3 +238,74 @@ export const openai = {
     };
   },
 };
+
+/**
+ * Consume an OpenAI Chat Completions SSE stream and produce a normalized
+ * `{ content, stop_reason, usage }` result.
+ *
+ * Each event's `data` is JSON (`[DONE]` terminates the stream). Tool calls
+ * stream their `function.arguments` string in fragments under
+ * `delta.tool_calls[index]`, so we accumulate per-index buffers and parse
+ * the final JSON once at end-of-stream.
+ *
+ * @param {Response} response
+ * @param {(text: string) => void} onTextChunk
+ */
+async function consumeOpenAIStream(response, onTextChunk) {
+  let text = "";
+  /** @type {Map<number, { id: string, name: string, args: string }>} */
+  const toolCallsByIndex = new Map();
+  let stopReason = "end_turn";
+  let usage = { promptTokens: 0, completionTokens: 0 };
+
+  for await (const { data } of readSSE(response)) {
+    if (data === "[DONE]") break;
+    let evt;
+    try {
+      evt = JSON.parse(data);
+    } catch {
+      continue;
+    }
+
+    if (evt.usage) usage = normalizeUsage(evt.usage);
+
+    const choice = evt.choices?.[0];
+    if (!choice) continue;
+
+    if (choice.finish_reason === "tool_calls") stopReason = "tool_use";
+    else if (choice.finish_reason === "stop" || choice.finish_reason === "length")
+      stopReason = "end_turn";
+
+    const delta = choice.delta || {};
+    if (typeof delta.content === "string" && delta.content.length > 0) {
+      text += delta.content;
+      onTextChunk(delta.content);
+    }
+    if (Array.isArray(delta.tool_calls)) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index ?? 0;
+        const existing = toolCallsByIndex.get(idx) || { id: "", name: "", args: "" };
+        if (tc.id) existing.id = tc.id;
+        if (tc.function?.name) existing.name = tc.function.name;
+        if (typeof tc.function?.arguments === "string") {
+          existing.args += tc.function.arguments;
+        }
+        toolCallsByIndex.set(idx, existing);
+      }
+    }
+  }
+
+  const content = [];
+  if (text.length > 0) content.push({ type: "text", text });
+  for (const [, tc] of toolCallsByIndex) {
+    let parsed = {};
+    try {
+      parsed = tc.args ? JSON.parse(tc.args) : {};
+    } catch {
+      parsed = {};
+    }
+    content.push({ type: "tool_use", id: tc.id, name: tc.name, input: parsed });
+  }
+
+  return { content, stop_reason: stopReason, usage };
+}

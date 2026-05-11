@@ -439,6 +439,139 @@ describe("executeTool", () => {
     expect(r.image).toBe("data:image/png;base64,abc");
     expect(r.forVision).toBe(true);
   });
+
+  it("download_file calls browser.downloads.download with url + filename", async () => {
+    globalThis.browser.downloads.download.mockResolvedValueOnce(42);
+    const r = await bridge.executeTool("download_file", {
+      url: "https://x/y.pdf",
+      filename: "y.pdf",
+    });
+    expect(globalThis.browser.downloads.download).toHaveBeenCalledWith({
+      url: "https://x/y.pdf",
+      filename: "y.pdf",
+    });
+    expect(r.success).toBe(true);
+    expect(r.download_id).toBe(42);
+  });
+
+  it("download_file omits filename when not provided", async () => {
+    globalThis.browser.downloads.download.mockResolvedValueOnce(1);
+    await bridge.executeTool("download_file", { url: "https://x/y.pdf" });
+    expect(globalThis.browser.downloads.download).toHaveBeenCalledWith({ url: "https://x/y.pdf" });
+  });
+});
+
+describe("persistence", () => {
+  it("persistSession writes conversationHistory + cost + turnCount to storage", async () => {
+    bridge.state.conversationHistory = [{ role: "user", content: "hi" }];
+    bridge.state.cost = { sessionUsd: 0.12, promptTokens: 5, completionTokens: 7 };
+    bridge.state.turnCount = 3;
+    await bridge.persistSession();
+    const call = globalThis.browser.storage.local.set.mock.calls.find(
+      (c) => c[0][bridge.PERSIST_KEY],
+    );
+    expect(call[0][bridge.PERSIST_KEY]).toEqual({
+      conversationHistory: [{ role: "user", content: "hi" }],
+      cost: { sessionUsd: 0.12, promptTokens: 5, completionTokens: 7 },
+      turnCount: 3,
+    });
+  });
+
+  it("persistSession swallows storage errors", async () => {
+    globalThis.browser.storage.local.set.mockRejectedValueOnce(new Error("quota"));
+    await expect(bridge.persistSession()).resolves.toBeUndefined();
+  });
+
+  it("restoreSession rehydrates state from storage", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({
+      [bridge.PERSIST_KEY]: {
+        conversationHistory: [{ role: "user", content: "saved" }],
+        cost: { sessionUsd: 1.5, promptTokens: 100, completionTokens: 200 },
+        turnCount: 7,
+      },
+    });
+    await bridge.restoreSession();
+    expect(bridge.state.conversationHistory).toEqual([{ role: "user", content: "saved" }]);
+    expect(bridge.state.turnCount).toBe(7);
+    expect(bridge.state.cost.sessionUsd).toBe(1.5);
+  });
+
+  it("restoreSession defaults turnCount when missing", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({
+      [bridge.PERSIST_KEY]: {
+        conversationHistory: [{ role: "user", content: "saved" }],
+      },
+    });
+    await bridge.restoreSession();
+    expect(bridge.state.turnCount).toBe(0);
+    expect(bridge.state.cost.sessionUsd).toBe(0);
+  });
+
+  it("restoreSession is a no-op for an empty store", async () => {
+    bridge.state.conversationHistory = [{ role: "user", content: "untouched" }];
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({});
+    await bridge.restoreSession();
+    expect(bridge.state.conversationHistory).toEqual([{ role: "user", content: "untouched" }]);
+  });
+
+  it("restoreSession ignores malformed payload", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({
+      [bridge.PERSIST_KEY]: { conversationHistory: "not array" },
+    });
+    bridge.state.conversationHistory = [];
+    await bridge.restoreSession();
+    expect(bridge.state.conversationHistory).toEqual([]);
+  });
+
+  it("restoreSession swallows storage errors", async () => {
+    globalThis.browser.storage.local.get.mockRejectedValueOnce(new Error("io"));
+    await expect(bridge.restoreSession()).resolves.toBeUndefined();
+  });
+
+  it("restoreSession clamps non-numeric cost fields to zero", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({
+      [bridge.PERSIST_KEY]: {
+        conversationHistory: [],
+        cost: { sessionUsd: "garbage", promptTokens: NaN, completionTokens: undefined },
+      },
+    });
+    await bridge.restoreSession();
+    expect(bridge.state.cost).toEqual({
+      sessionUsd: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+    });
+  });
+});
+
+describe("cost tracking (recordUsage)", () => {
+  it("accumulates token totals and USD per call", () => {
+    bridge.state.cost = { sessionUsd: 0, promptTokens: 0, completionTokens: 0 };
+    bridge.recordUsage("gpt-4o-mini", { promptTokens: 1000, completionTokens: 500 });
+    expect(bridge.state.cost.promptTokens).toBe(1000);
+    expect(bridge.state.cost.completionTokens).toBe(500);
+    expect(bridge.state.cost.sessionUsd).toBeGreaterThan(0);
+  });
+
+  it("ignores undefined usage", () => {
+    bridge.state.cost = { sessionUsd: 0, promptTokens: 0, completionTokens: 0 };
+    bridge.recordUsage("gpt-4o-mini", undefined);
+    expect(bridge.state.cost).toEqual({ sessionUsd: 0, promptTokens: 0, completionTokens: 0 });
+  });
+
+  it("tolerates partial usage objects", () => {
+    bridge.state.cost = { sessionUsd: 0, promptTokens: 0, completionTokens: 0 };
+    bridge.recordUsage("gpt-4o-mini", { promptTokens: 100 });
+    expect(bridge.state.cost.promptTokens).toBe(100);
+    expect(bridge.state.cost.completionTokens).toBe(0);
+  });
+
+  it("treats only-completion-tokens usage symmetrically", () => {
+    bridge.state.cost = { sessionUsd: 0, promptTokens: 0, completionTokens: 0 };
+    bridge.recordUsage("gpt-4o-mini", { completionTokens: 50 });
+    expect(bridge.state.cost.promptTokens).toBe(0);
+    expect(bridge.state.cost.completionTokens).toBe(50);
+  });
 });
 
 describe("runAgentLoop", () => {
@@ -704,6 +837,71 @@ describe("runAgentLoop", () => {
     expect(trs.some((c) => c[0].success === false)).toBe(true);
   });
 
+  it("emits STREAM_START/STREAM_DELTA/STREAM_END around each LLM call", async () => {
+    providers.callLLM.mockImplementationOnce(async (_sp, _msgs, _tools, _signal, onChunk) => {
+      onChunk("Hel");
+      onChunk("lo");
+      return {
+        content: [{ type: "text", text: "Hello" }],
+        stop_reason: "end_turn",
+        usage: { promptTokens: 2, completionTokens: 1 },
+      };
+    });
+
+    const port = makePort();
+    await bridge.runAgentLoop("hi", port);
+
+    const types = port.postMessage.mock.calls.map((c) => c[0].type);
+    expect(types).toContain("STREAM_START");
+    expect(types).toContain("STREAM_DELTA");
+    expect(types).toContain("STREAM_END");
+    const deltas = port.postMessage.mock.calls
+      .filter((c) => c[0].type === "STREAM_DELTA")
+      .map((c) => c[0].text);
+    expect(deltas).toEqual(["Hel", "lo"]);
+  });
+
+  it("STREAM_END carries the formatted cost when provider supplies usage", async () => {
+    providers.callLLM.mockImplementationOnce(async (_sp, _msgs, _tools, _signal, _onChunk) => ({
+      content: [{ type: "text", text: "done" }],
+      stop_reason: "end_turn",
+      usage: { promptTokens: 100000, completionTokens: 100000 },
+    }));
+    // Provider info defaults to claude-sonnet-4-20250514 which has pricing
+    const port = makePort();
+    await bridge.runAgentLoop("hi", port);
+
+    const end = port.postMessage.mock.calls.find((c) => c[0].type === "STREAM_END");
+    expect(end[0].cost).toMatch(/^\$/);
+  });
+
+  it("STATUS idle on completion includes formatted cost", async () => {
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "text", text: "ok" }],
+      stop_reason: "end_turn",
+    });
+    const port = makePort();
+    await bridge.runAgentLoop("hi", port);
+    const idle = port.postMessage.mock.calls
+      .filter((c) => c[0].type === "STATUS")
+      .map((c) => c[0])
+      .find((s) => s.status === "idle");
+    expect(idle.cost).toBeDefined();
+  });
+
+  it("persists the conversation after the loop", async () => {
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "text", text: "ok" }],
+      stop_reason: "end_turn",
+    });
+    const port = makePort();
+    await bridge.runAgentLoop("hi", port);
+    const persisted = globalThis.browser.storage.local.set.mock.calls.find(
+      (c) => c[0][bridge.PERSIST_KEY] !== undefined,
+    );
+    expect(persisted).toBeDefined();
+  });
+
   it("attaches screenshot_for_vision image as a separate user message", async () => {
     globalThis.browser.storage.local.get.mockResolvedValue({
       maxTurns: 25,
@@ -913,13 +1111,34 @@ describe("port message handlers", () => {
   it("CLEAR_HISTORY resets state and emits HISTORY_CLEARED", async () => {
     bridge.state.conversationHistory = [{ role: "user", content: "x" }];
     bridge.state.turnCount = 3;
+    bridge.state.cost = { sessionUsd: 5, promptTokens: 100, completionTokens: 50 };
     const port = makePortWithName();
     getConnectListener()(port);
     const handler = port.onMessage.addListener.mock.calls[0][0];
     await handler({ type: "CLEAR_HISTORY" });
     expect(bridge.state.conversationHistory).toEqual([]);
     expect(bridge.state.turnCount).toBe(0);
+    expect(bridge.state.cost).toEqual({ sessionUsd: 0, promptTokens: 0, completionTokens: 0 });
+    expect(globalThis.browser.storage.local.remove).toHaveBeenCalledWith(bridge.PERSIST_KEY);
     expect(port.postMessage).toHaveBeenCalledWith({ type: "HISTORY_CLEARED" });
+  });
+
+  it("CLEAR_HISTORY swallows storage.remove errors", async () => {
+    globalThis.browser.storage.local.remove.mockRejectedValueOnce(new Error("io"));
+    const port = makePortWithName();
+    getConnectListener()(port);
+    const handler = port.onMessage.addListener.mock.calls[0][0];
+    await handler({ type: "CLEAR_HISTORY" });
+    expect(port.postMessage).toHaveBeenCalledWith({ type: "HISTORY_CLEARED" });
+  });
+
+  it("GET_STATUS includes a formatted cost field", async () => {
+    const port = makePortWithName();
+    getConnectListener()(port);
+    const handler = port.onMessage.addListener.mock.calls[0][0];
+    await handler({ type: "GET_STATUS" });
+    const status = port.postMessage.mock.calls.find((c) => c[0].type === "STATUS")[0];
+    expect(typeof status.cost).toBe("string");
   });
 
   it("STOP_AGENT triggers abort", async () => {

@@ -14,6 +14,9 @@ import {
   scanPageContent,
   frameUntrustedText,
 } from "./lib/policy.js";
+import { computeCost, formatCost } from "./lib/pricing.js";
+
+const PERSIST_KEY = "conversationState";
 
 const state = {
   conversationHistory: [],
@@ -26,6 +29,14 @@ const state = {
   policy: null,
   /** Pending tool preview resolvers, keyed by tool_use id. */
   pendingPreviews: new Map(),
+  /** Cumulative token + cost totals for this session, per model. */
+  cost: {
+    sessionUsd: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+  },
+  /** Image attached to the next assistant turn (from screenshot_for_vision). */
+  pendingVisionImage: null,
 };
 
 const BROWSER_TOOLS = [
@@ -217,6 +228,19 @@ const BROWSER_TOOLS = [
     input_schema: { type: "object", properties: {}, required: [] },
   },
   {
+    name: "download_file",
+    description:
+      "Initiate a browser download from a URL. Symmetric counterpart to upload_file. The user sees the standard Firefox download prompt.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "URL of the resource to download." },
+        filename: { type: "string", description: "Optional suggested filename." },
+      },
+      required: ["url"],
+    },
+  },
+  {
     name: "task_complete",
     description: "Signal the task is complete.",
     input_schema: {
@@ -392,6 +416,13 @@ async function executeTool(toolName, toolInput) {
           image: await browser.tabs.captureVisibleTab(null, { format: "png", quality: 85 }),
           forVision: true,
         };
+      case "download_file": {
+        const id = await browser.downloads.download({
+          url: toolInput.url,
+          ...(toolInput.filename ? { filename: toolInput.filename } : {}),
+        });
+        return { success: true, download_id: id, url: toolInput.url };
+      }
       case "task_complete":
         return { complete: true, summary: toolInput.summary };
       default:
@@ -417,6 +448,63 @@ function previewToolCall(port, toolUseId, name, input) {
     state.pendingPreviews.set(toolUseId, resolve);
     send(port, { type: "TOOL_PREVIEW", id: toolUseId, tool: name, input });
   });
+}
+
+/**
+ * Persist the current conversation history and cost totals to
+ * `browser.storage.local` so the session survives a service-worker restart
+ * or a browser reload. Best-effort: storage failures are swallowed because
+ * persistence is a convenience, not a correctness invariant.
+ */
+async function persistSession() {
+  try {
+    await browser.storage.local.set({
+      [PERSIST_KEY]: {
+        conversationHistory: state.conversationHistory,
+        cost: state.cost,
+        turnCount: state.turnCount,
+      },
+    });
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/**
+ * Restore a previously persisted session into `state`. Called once at module
+ * load; missing or malformed data resets to a clean slate.
+ */
+async function restoreSession() {
+  try {
+    const stored = await browser.storage.local.get([PERSIST_KEY]);
+    const s = stored[PERSIST_KEY];
+    if (s && Array.isArray(s.conversationHistory)) {
+      state.conversationHistory = s.conversationHistory;
+      state.turnCount = typeof s.turnCount === "number" ? s.turnCount : 0;
+      if (s.cost && typeof s.cost === "object") {
+        state.cost = {
+          sessionUsd: Number(s.cost.sessionUsd) || 0,
+          promptTokens: Number(s.cost.promptTokens) || 0,
+          completionTokens: Number(s.cost.completionTokens) || 0,
+        };
+      }
+    }
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/**
+ * Update session cost totals after a callLLM response.
+ *
+ * @param {string} model
+ * @param {{ promptTokens: number, completionTokens: number } | undefined} usage
+ */
+function recordUsage(model, usage) {
+  if (!usage) return;
+  state.cost.promptTokens += usage.promptTokens || 0;
+  state.cost.completionTokens += usage.completionTokens || 0;
+  state.cost.sessionUsd += computeCost(model, usage);
 }
 
 /**
@@ -470,13 +558,34 @@ async function runAgentLoop(userMessage, port) {
         break;
       }
 
+      // Begin a streamed assistant turn. The sidebar starts a new "in-flight"
+      // message on STREAM_START and appends each STREAM_DELTA chunk. We still
+      // emit a final ASSISTANT_TEXT for non-streaming providers and as a
+      // canonical end-of-turn marker.
+      const streamId = `t${state.turnCount}-${Date.now()}`;
+      send(port, { type: "STREAM_START", id: streamId });
+      const onTextChunk = (text) => {
+        send(port, { type: "STREAM_DELTA", id: streamId, text });
+      };
+
       const response = await callLLM(
         SYSTEM_PROMPT,
         state.conversationHistory,
         BROWSER_TOOLS,
         state.abortController.signal,
+        onTextChunk,
       );
       state.conversationHistory.push({ role: "assistant", content: response.content });
+      if (info?.model) recordUsage(info.model, response.usage);
+      send(port, {
+        type: "STREAM_END",
+        id: streamId,
+        cost: formatCost(state.cost.sessionUsd),
+        tokens: {
+          prompt: state.cost.promptTokens,
+          completion: state.cost.completionTokens,
+        },
+      });
 
       for (const b of response.content) {
         if (b.type === "text" && b.text) send(port, { type: "ASSISTANT_TEXT", text: b.text });
@@ -581,7 +690,12 @@ async function runAgentLoop(userMessage, port) {
   } finally {
     state.isAgentRunning = false;
     state.abortController = null;
-    send(port, { type: "STATUS", status: "idle" });
+    await persistSession();
+    send(port, {
+      type: "STATUS",
+      status: "idle",
+      cost: formatCost(state.cost.sessionUsd),
+    });
   }
 }
 
@@ -686,6 +800,12 @@ browser.runtime.onConnect.addListener((port) => {
       case "CLEAR_HISTORY":
         state.conversationHistory = [];
         state.turnCount = 0;
+        state.cost = { sessionUsd: 0, promptTokens: 0, completionTokens: 0 };
+        try {
+          await browser.storage.local.remove(PERSIST_KEY);
+        } catch {
+          /* storage unavailable */
+        }
         send(port, { type: "HISTORY_CLEARED" });
         break;
       case "GET_STATUS": {
@@ -697,6 +817,7 @@ browser.runtime.onConnect.addListener((port) => {
           providerName: info?.name || null,
           modelName: info?.modelName || null,
           providerId: info?.id || null,
+          cost: formatCost(state.cost.sessionUsd),
         });
         break;
       }
@@ -722,6 +843,7 @@ async function loadSettings() {
   state.maxTurns = s.maxTurns || 25;
 }
 loadSettings();
+restoreSession();
 browser.storage.onChanged.addListener(() => loadSettings());
 
 browser.contextMenus.create({
@@ -745,10 +867,14 @@ export {
   state,
   BROWSER_TOOLS,
   SYSTEM_PROMPT,
+  PERSIST_KEY,
   executeTool,
   sleep,
   runAgentLoop,
   runChatOnly,
   send,
   loadSettings,
+  persistSession,
+  restoreSession,
+  recordUsage,
 };

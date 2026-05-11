@@ -273,6 +273,104 @@ describe("google provider", () => {
     });
   });
 
+  describe("call (streaming)", () => {
+    function sseResponse(events) {
+      const lines = events.map((e) => `data: ${typeof e === "string" ? e : JSON.stringify(e)}\n\n`);
+      return Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              const enc = new TextEncoder();
+              for (const l of lines) controller.enqueue(enc.encode(l));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        ),
+      );
+    }
+
+    it("uses the streamGenerateContent endpoint with alt=sse", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([{ candidates: [{ content: { parts: [{ text: "ok" }] } }] }]),
+      );
+      await google.call("AIza", "gemini-2.5-flash", "s", [], [], null, undefined, () => {});
+      const url = globalThis.fetch.mock.calls[0][0];
+      expect(url).toMatch(/streamGenerateContent\?alt=sse$/);
+    });
+
+    it("streams text parts and returns reconstructed content", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          { candidates: [{ content: { parts: [{ text: "Hel" }] } }] },
+          { candidates: [{ content: { parts: [{ text: "lo" }] } }] },
+          { usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2 } },
+        ]),
+      );
+      const chunks = [];
+      const r = await google.call("k", "gemini-2.5-flash", "s", [], [], null, undefined, (t) =>
+        chunks.push(t),
+      );
+      expect(chunks).toEqual(["Hel", "lo"]);
+      expect(r.content[0]).toEqual({ type: "text", text: "Hello" });
+      expect(r.stop_reason).toBe("end_turn");
+      expect(r.usage).toEqual({ promptTokens: 3, completionTokens: 2 });
+    });
+
+    it("rebuilds streamed functionCall parts into tool_use blocks", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          {
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    { text: "thinking" },
+                    { functionCall: { name: "click", args: { sel: "#x" } } },
+                  ],
+                },
+              },
+            ],
+          },
+        ]),
+      );
+      const r = await google.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.stop_reason).toBe("tool_use");
+      expect(r.content[0].type).toBe("text");
+      expect(r.content[1].type).toBe("tool_use");
+      expect(r.content[1].name).toBe("click");
+      expect(r.content[1].input).toEqual({ sel: "#x" });
+    });
+
+    it("handles a streamed functionCall with no args", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([{ candidates: [{ content: { parts: [{ functionCall: { name: "x" } }] } }] }]),
+      );
+      const r = await google.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0].input).toEqual({});
+    });
+
+    it("ignores non-JSON SSE data and chunks without candidates/parts", async () => {
+      globalThis.fetch.mockReturnValueOnce(
+        sseResponse([
+          "not json",
+          { candidates: [] },
+          { candidates: [{ content: {} }] },
+          { candidates: [{ content: { parts: [{ text: "x" }] } }] },
+        ]),
+      );
+      const r = await google.call("k", "m", "s", [], [], null, undefined, () => {});
+      expect(r.content[0].text).toBe("x");
+    });
+
+    it("propagates non-200 errors", async () => {
+      globalThis.fetch.mockResolvedValueOnce(fetchResponse("err", { ok: false, status: 400 }));
+      await expect(google.call("k", "m", "s", [], [], null, undefined, () => {})).rejects.toThrow(
+        /Gemini API 400/,
+      );
+    });
+  });
+
   describe("buildToolResultMessage", () => {
     it("includes _toolName for Gemini conversion", () => {
       const msg = google.buildToolResultMessage([

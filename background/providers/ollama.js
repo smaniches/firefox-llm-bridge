@@ -5,7 +5,14 @@
  * Connects to Ollama running locally via its OpenAI-compatible endpoint.
  * No API key required. Models auto-detected from /api/tags.
  * User must have Ollama installed and running.
+ *
+ * The sovereignty path: when this provider is active, no data leaves the
+ * user's device — every request hits loopback. Streaming uses Ollama's
+ * NDJSON line protocol (one parsed JSON value per line).
  */
+
+import { readNDJSON } from "../lib/stream.js";
+import { normalizeUsage } from "../lib/pricing.js";
 
 export const ollama = {
   id: "ollama",
@@ -155,11 +162,16 @@ export const ollama = {
   },
 
   /**
-   * Call Ollama's OpenAI-compatible endpoint and return normalized response.
+   * Call Ollama's OpenAI-compatible endpoint and return a normalized response.
+   *
+   * When `onTextChunk` is provided, the request is made with `stream: true`
+   * and consumed as NDJSON (Ollama's native streaming format). The return
+   * shape matches the non-streaming path.
    */
-  async call(apiKey, model, systemPrompt, messages, tools, signal, endpoint) {
+  async call(apiKey, model, systemPrompt, messages, tools, signal, endpoint, onTextChunk) {
     const base = endpoint || this.defaultEndpoint;
     const url = `${base}/v1/chat/completions`;
+    const stream = typeof onTextChunk === "function";
 
     const formattedMessages = [
       { role: "system", content: systemPrompt },
@@ -169,7 +181,7 @@ export const ollama = {
     const body = {
       model: model,
       messages: formattedMessages,
-      stream: false,
+      stream,
     };
 
     if (tools && tools.length > 0) {
@@ -198,14 +210,16 @@ export const ollama = {
       throw new Error(`Ollama ${response.status}: ${errorBody.substring(0, 200)}`);
     }
 
-    const data = await response.json();
-    const choice = data.choices?.[0];
-
-    if (!choice) {
-      throw new Error("Ollama returned no choices");
+    if (!stream) {
+      const data = await response.json();
+      const choice = data.choices?.[0];
+      if (!choice) throw new Error("Ollama returned no choices");
+      const normalized = this._normalizeResponse(choice);
+      normalized.usage = normalizeUsage(data.usage);
+      return normalized;
     }
 
-    return this._normalizeResponse(choice);
+    return await consumeOllamaStream(response, onTextChunk);
   },
 
   /**
@@ -266,4 +280,61 @@ function formatSize(bytes) {
   if (!bytes) return "?";
   const gb = bytes / (1024 * 1024 * 1024);
   return gb >= 1 ? `${gb.toFixed(1)}GB` : `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
+}
+
+/**
+ * Consume Ollama's NDJSON streaming response. Ollama's `/v1/chat/completions`
+ * endpoint with `stream: true` returns one OpenAI-style chunk per line.
+ *
+ * @param {Response} response
+ * @param {(text: string) => void} onTextChunk
+ */
+async function consumeOllamaStream(response, onTextChunk) {
+  let text = "";
+  /** @type {Map<number, { id: string, name: string, args: string }>} */
+  const toolCallsByIndex = new Map();
+  let stopReason = "end_turn";
+  let usage = { promptTokens: 0, completionTokens: 0 };
+
+  for await (const evt of readNDJSON(response)) {
+    if (evt.usage) usage = normalizeUsage(evt.usage);
+    const choice = evt.choices?.[0];
+    if (!choice) continue;
+
+    if (choice.finish_reason === "tool_calls") stopReason = "tool_use";
+    else if (choice.finish_reason === "stop" || choice.finish_reason === "length")
+      stopReason = "end_turn";
+
+    const delta = choice.delta || {};
+    if (typeof delta.content === "string" && delta.content.length > 0) {
+      text += delta.content;
+      onTextChunk(delta.content);
+    }
+    if (Array.isArray(delta.tool_calls)) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index ?? 0;
+        const existing = toolCallsByIndex.get(idx) || { id: "", name: "", args: "" };
+        if (tc.id) existing.id = tc.id;
+        if (tc.function?.name) existing.name = tc.function.name;
+        if (typeof tc.function?.arguments === "string") {
+          existing.args += tc.function.arguments;
+        }
+        toolCallsByIndex.set(idx, existing);
+      }
+    }
+  }
+
+  const content = [];
+  if (text.length > 0) content.push({ type: "text", text });
+  for (const [, tc] of toolCallsByIndex) {
+    let parsed = {};
+    try {
+      parsed = tc.args ? JSON.parse(tc.args) : {};
+    } catch {
+      parsed = {};
+    }
+    content.push({ type: "tool_use", id: tc.id, name: tc.name, input: parsed });
+  }
+
+  return { content, stop_reason: stopReason, usage };
 }
