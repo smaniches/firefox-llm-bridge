@@ -111,6 +111,9 @@ function handleMsg(msg) {
     case "HISTORY_CLEARED":
       clearMessages();
       break;
+    case "HISTORY_RESTORE":
+      restoreHistoryMessages(msg.messages);
+      break;
     case "TOOL_PREVIEW":
       showPreview(msg.id, msg.tool, msg.input);
       break;
@@ -312,6 +315,25 @@ function clearMessages() {
  *
  * @param {string} id
  */
+/**
+ * Repopulate the sidebar with messages from a persisted session.
+ *
+ * Called when the background emits `HISTORY_RESTORE` after a `GET_STATUS`
+ * exchange. We render each message via the standard `addMessage` path so
+ * markdown formatting is consistent with live messages. The welcome card
+ * is removed if any history exists.
+ *
+ * @param {Array<{ role: "user" | "assistant", text: string }>} messages
+ */
+function restoreHistoryMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  for (const m of messages) {
+    if (m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string") {
+      addMessage(m.role, m.text);
+    }
+  }
+}
+
 function beginStreamingMessage(id) {
   removeWelcome();
   const div = document.createElement("div");

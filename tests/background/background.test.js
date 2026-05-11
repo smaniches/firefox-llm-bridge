@@ -572,6 +572,119 @@ describe("trimHistory", () => {
   });
 });
 
+describe("sidebarHistoryView / unframeUserContent", () => {
+  it("unframeUserContent strips chat-mode framing", () => {
+    const framed =
+      "[BEGIN UNTRUSTED PAGE CONTENT]\n…page text…\n[END UNTRUSTED PAGE CONTENT]\n\n[USER QUESTION]\nWhat is this?";
+    expect(bridge.unframeUserContent(framed)).toBe("What is this?");
+  });
+
+  it("unframeUserContent passes plain strings through unchanged", () => {
+    expect(bridge.unframeUserContent("hello")).toBe("hello");
+  });
+
+  it("unframeUserContent returns empty for non-string input", () => {
+    expect(bridge.unframeUserContent(null)).toBe("");
+    expect(bridge.unframeUserContent(undefined)).toBe("");
+    expect(bridge.unframeUserContent(123)).toBe("");
+  });
+
+  it("sidebarHistoryView projects user/assistant text and skips internal messages", () => {
+    const view = bridge.sidebarHistoryView([
+      { role: "user", content: "hi" },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Hello!" },
+          { type: "tool_use", id: "t1", name: "read_page", input: {} },
+        ],
+      },
+      // tool_result message — internal, must be dropped
+      {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "t1", content: "{}" }],
+      },
+      // image-only continuation — internal, must be dropped
+      {
+        role: "user",
+        content: [{ type: "image", dataUrl: "data:image/png;base64,xxx" }],
+      },
+      // assistant turn that was entirely tool calls — no renderable text
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "t2", name: "navigate", input: {} }],
+      },
+      { role: "assistant", content: "final answer" },
+    ]);
+
+    expect(view).toEqual([
+      { role: "user", text: "hi" },
+      { role: "assistant", text: "Hello!" },
+      { role: "assistant", text: "final answer" },
+    ]);
+  });
+
+  it("sidebarHistoryView unframes chat-mode user prompts", () => {
+    const framed =
+      "[BEGIN UNTRUSTED PAGE CONTENT]\npage\n[END UNTRUSTED PAGE CONTENT]\n\n[USER QUESTION]\nSummarize";
+    const view = bridge.sidebarHistoryView([{ role: "user", content: framed }]);
+    expect(view).toEqual([{ role: "user", text: "Summarize" }]);
+  });
+
+  it("sidebarHistoryView is empty for an empty history", () => {
+    expect(bridge.sidebarHistoryView([])).toEqual([]);
+  });
+
+  it("sidebarHistoryView skips assistant turns with no renderable text", () => {
+    const view = bridge.sidebarHistoryView([
+      { role: "assistant", content: [{ type: "text", text: "" }] },
+      { role: "assistant", content: "" },
+    ]);
+    expect(view).toEqual([]);
+  });
+});
+
+describe("GET_STATUS emits HISTORY_RESTORE", () => {
+  function makePortWithName() {
+    return {
+      name: "topologica-sidebar",
+      sender: {},
+      postMessage: vi.fn(),
+      onMessage: { addListener: vi.fn() },
+    };
+  }
+  function getConnectListener() {
+    const calls = globalThis.browser.runtime.onConnect.addListener.mock.calls;
+    return calls[calls.length - 1][0];
+  }
+
+  it("sends HISTORY_RESTORE after STATUS when there is restored history", async () => {
+    bridge.state.conversationHistory = [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "hello" },
+    ];
+    const port = makePortWithName();
+    getConnectListener()(port);
+    const handler = port.onMessage.addListener.mock.calls[0][0];
+    await handler({ type: "GET_STATUS" });
+    const restore = port.postMessage.mock.calls.find((c) => c[0].type === "HISTORY_RESTORE");
+    expect(restore).toBeDefined();
+    expect(restore[0].messages).toEqual([
+      { role: "user", text: "hi" },
+      { role: "assistant", text: "hello" },
+    ]);
+  });
+
+  it("does NOT send HISTORY_RESTORE when history is empty", async () => {
+    bridge.state.conversationHistory = [];
+    const port = makePortWithName();
+    getConnectListener()(port);
+    const handler = port.onMessage.addListener.mock.calls[0][0];
+    await handler({ type: "GET_STATUS" });
+    expect(port.postMessage.mock.calls.some((c) => c[0].type === "HISTORY_RESTORE")).toBe(false);
+  });
+});
+
 describe("loadSettings", () => {
   it("reads maxHistory from storage and defaults when absent", async () => {
     globalThis.browser.storage.local.get.mockResolvedValueOnce({ maxHistory: 7 });

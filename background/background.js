@@ -871,6 +871,14 @@ browser.runtime.onConnect.addListener((port) => {
           providerId: info?.id || null,
           cost: formatCost(state.cost.sessionUsd),
         });
+        // If there's a restored conversation, hand the renderable view to the
+        // sidebar so it can repopulate the message list. Without this,
+        // persistence felt half-broken — the background remembered the
+        // session, but the user couldn't see it.
+        const renderable = sidebarHistoryView(state.conversationHistory);
+        if (renderable.length > 0) {
+          send(port, { type: "HISTORY_RESTORE", messages: renderable });
+        }
         break;
       }
       case "CHAT_ONLY":
@@ -894,6 +902,53 @@ async function loadSettings() {
   const s = await browser.storage.local.get(["maxTurns", "maxHistory"]);
   state.maxTurns = s.maxTurns || 25;
   state.maxHistory = s.maxHistory || DEFAULT_MAX_HISTORY;
+}
+
+/**
+ * Strip the chat-mode untrusted-content framing from a user prompt so the
+ * sidebar shows the original user question. Chat mode wraps page content
+ * with `[BEGIN UNTRUSTED PAGE CONTENT … END]` and a `[USER QUESTION]`
+ * trailer; restored sessions should display only the question.
+ *
+ * @param {string} content
+ * @returns {string}
+ */
+function unframeUserContent(content) {
+  if (typeof content !== "string") return "";
+  const m = /\n\n\[USER QUESTION\]\n([\s\S]*)$/.exec(content);
+  return m ? m[1] : content;
+}
+
+/**
+ * Produce a compact, render-safe view of `conversationHistory` for the
+ * sidebar to display when the user reopens the panel. Filters out internal
+ * messages (tool_result blocks, vision image payloads, assistant turns
+ * that were purely tool calls) and unwraps chat-mode framing.
+ *
+ * @param {Array<{ role: string, content: any }>} history
+ * @returns {Array<{ role: "user" | "assistant", text: string }>}
+ */
+function sidebarHistoryView(history) {
+  const out = [];
+  for (const msg of history) {
+    if (msg.role === "user") {
+      if (typeof msg.content === "string") {
+        out.push({ role: "user", text: unframeUserContent(msg.content) });
+      }
+      // Arrays (tool_result + image) are internal — skip.
+    } else if (msg.role === "assistant") {
+      if (typeof msg.content === "string" && msg.content.length > 0) {
+        out.push({ role: "assistant", text: msg.content });
+      } else if (Array.isArray(msg.content)) {
+        const text = msg.content
+          .filter((b) => b.type === "text" && typeof b.text === "string")
+          .map((b) => b.text)
+          .join("");
+        if (text.length > 0) out.push({ role: "assistant", text });
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -945,4 +1000,6 @@ export {
   restoreSession,
   recordUsage,
   trimHistory,
+  sidebarHistoryView,
+  unframeUserContent,
 };

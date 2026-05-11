@@ -217,6 +217,50 @@ describe("sidebar: message rendering", () => {
     expect(document.querySelector(".welcome-msg")).toBeTruthy();
     expect(document.querySelectorAll(".msg-assistant").length).toBe(0);
   });
+
+  it("HISTORY_RESTORE repopulates user + assistant messages", async () => {
+    await setup();
+    handleMsg({
+      type: "HISTORY_RESTORE",
+      messages: [
+        { role: "user", text: "first prompt" },
+        { role: "assistant", text: "first reply" },
+        { role: "user", text: "**second**" },
+        { role: "assistant", text: "second reply" },
+      ],
+    });
+    const userMsgs = document.querySelectorAll(".msg-user");
+    const asstMsgs = document.querySelectorAll(".msg-assistant");
+    expect(userMsgs.length).toBe(2);
+    expect(asstMsgs.length).toBe(2);
+    // Markdown is rendered on assistant turns
+    expect(userMsgs[1].textContent).toBe("**second**");
+    expect(asstMsgs[1].textContent).toBe("second reply");
+  });
+
+  it("HISTORY_RESTORE is a no-op for empty or missing messages", async () => {
+    await setup();
+    handleMsg({ type: "HISTORY_RESTORE", messages: [] });
+    handleMsg({ type: "HISTORY_RESTORE" });
+    handleMsg({ type: "HISTORY_RESTORE", messages: null });
+    expect(document.querySelector(".welcome-msg")).toBeTruthy();
+    expect(document.querySelectorAll(".msg-assistant").length).toBe(0);
+  });
+
+  it("HISTORY_RESTORE skips malformed entries", async () => {
+    await setup();
+    handleMsg({
+      type: "HISTORY_RESTORE",
+      messages: [
+        null,
+        { role: "system", text: "ignored" },
+        { role: "user", text: 42 },
+        { role: "assistant", text: "ok" },
+      ],
+    });
+    expect(document.querySelectorAll(".msg-assistant").length).toBe(1);
+    expect(document.querySelectorAll(".msg-user").length).toBe(0);
+  });
 });
 
 describe("sidebar: send + mode toggle", () => {
