@@ -12,7 +12,12 @@ let activeProvider = null;
 // ============================================================
 
 async function load() {
-  const stored = await browser.storage.local.get(["activeProvider", "providers", "maxTurns"]);
+  const stored = await browser.storage.local.get([
+    "activeProvider",
+    "providers",
+    "maxTurns",
+    "safetyPolicy",
+  ]);
   activeProvider = stored.activeProvider || null;
   const providers = stored.providers || {};
 
@@ -26,6 +31,21 @@ async function load() {
   if (providers.google?.key) el("google-key").value = providers.google.key;
   if (providers.google?.model) el("google-model").value = providers.google.model;
   if (stored.maxTurns) el("max-turns").value = stored.maxTurns;
+
+  // Restore safety policy. The policy module's mergePolicy handles defaults,
+  // but here we only need to populate the form fields; the live agent always
+  // re-reads via loadPolicy() at runtime.
+  const policy = stored.safetyPolicy || {};
+  if (policy.previewMode) el("policy-preview-mode").value = policy.previewMode;
+  if (Array.isArray(policy.allowlist)) {
+    el("policy-allowlist").value = policy.allowlist.join("\n");
+  }
+  if (Array.isArray(policy.blocklist)) {
+    el("policy-blocklist").value = policy.blocklist.join("\n");
+  }
+  if (typeof policy.warnOnInjectionPatterns === "boolean") {
+    el("policy-warn-injection").checked = policy.warnOnInjectionPatterns;
+  }
 
   // Highlight active provider card
   updateCardStates();
@@ -285,6 +305,39 @@ el("safety-save").addEventListener("click", async () => {
   }
   await browser.storage.local.set({ maxTurns });
   setStatus("safety-status", "Saved.", "success");
+});
+
+// ============================================================
+// SAFETY POLICY (domain control, preview mode, injection warnings)
+// ============================================================
+
+/**
+ * Parse a newline-separated textarea into a clean array of patterns.
+ * Trims each line and drops blanks.
+ * @param {string} raw
+ * @returns {string[]}
+ */
+function parsePatternList(raw) {
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+el("policy-save").addEventListener("click", async () => {
+  const previewMode = el("policy-preview-mode").value;
+  if (previewMode !== "off" && previewMode !== "destructive" && previewMode !== "all") {
+    setStatus("policy-status", "Invalid preview mode.", "error");
+    return;
+  }
+  const policy = {
+    previewMode,
+    allowlist: parsePatternList(el("policy-allowlist").value),
+    blocklist: parsePatternList(el("policy-blocklist").value),
+    warnOnInjectionPatterns: !!el("policy-warn-injection").checked,
+  };
+  await browser.storage.local.set({ safetyPolicy: policy });
+  setStatus("policy-status", "Policy saved.", "success");
 });
 
 // ============================================================

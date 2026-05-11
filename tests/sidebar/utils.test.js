@@ -5,15 +5,22 @@ describe("TOOL_ICONS", () => {
   it("covers every tool exposed by the agent", () => {
     expect(Object.keys(TOOL_ICONS).sort()).toEqual([
       "click_element",
+      "drag_drop",
       "extract_text",
       "get_tab_info",
       "go_back",
+      "hover_element",
+      "list_tabs",
       "navigate",
+      "press_key",
       "read_page",
       "screenshot",
+      "screenshot_for_vision",
       "scroll_page",
+      "switch_tab",
       "task_complete",
       "type_text",
+      "upload_file",
       "wait",
     ]);
   });
@@ -102,6 +109,10 @@ describe("summarize", () => {
     expect(summarize("click_element", { element_index: 7 })).toBe("[7]");
   });
 
+  it("click_element shows [?] when neither selector nor index is given", () => {
+    expect(summarize("click_element", {})).toBe("[?]");
+  });
+
   it("type_text truncates at 20 chars and adds ellipsis", () => {
     expect(summarize("type_text", { text: "x".repeat(50) })).toMatch(/\.\.\."$/);
   });
@@ -132,6 +143,62 @@ describe("summarize", () => {
     expect(summarize("screenshot", {})).toBe("");
     expect(summarize("read_page", {})).toBe("");
     expect(summarize("task_complete", { summary: "done" })).toBe("");
+  });
+
+  it("hover_element prefers selector then index, with [?] fallback", () => {
+    expect(summarize("hover_element", { selector: ".x" })).toBe(".x");
+    expect(summarize("hover_element", { element_index: 3 })).toBe("[3]");
+    expect(summarize("hover_element", {})).toBe("[?]");
+  });
+
+  it("press_key formats modifiers + key", () => {
+    expect(summarize("press_key", { key: "a", modifiers: { ctrl: true, shift: true } })).toBe(
+      "Ctrl+Shift+a",
+    );
+    expect(summarize("press_key", { key: "Enter" })).toBe("Enter");
+    expect(summarize("press_key", { key: "x", modifiers: { alt: true, meta: true } })).toBe(
+      "Alt+Meta+x",
+    );
+  });
+
+  it("press_key with no key returns just modifiers", () => {
+    expect(summarize("press_key", { modifiers: { ctrl: true } })).toBe("Ctrl");
+  });
+
+  it("drag_drop shows from→to with fallback to index", () => {
+    expect(
+      summarize("drag_drop", {
+        from_selector: "#a",
+        to_selector: "#b",
+      }),
+    ).toBe("#a → #b");
+    expect(
+      summarize("drag_drop", {
+        from_index: 1,
+        to_index: 2,
+      }),
+    ).toBe("[1] → [2]");
+  });
+
+  it("drag_drop shows [?] when both endpoints are missing", () => {
+    expect(summarize("drag_drop", {})).toBe("[?] → [?]");
+  });
+
+  it("upload_file shows the file_name", () => {
+    expect(summarize("upload_file", { file_name: "report.pdf" })).toBe("report.pdf");
+    expect(summarize("upload_file", {})).toBe("(file)");
+  });
+
+  it("switch_tab shows tab id", () => {
+    expect(summarize("switch_tab", { tab_id: 42 })).toBe("→ tab 42");
+  });
+
+  it("list_tabs returns static label", () => {
+    expect(summarize("list_tabs", {})).toBe("(current window)");
+  });
+
+  it("screenshot_for_vision returns static label", () => {
+    expect(summarize("screenshot_for_vision", {})).toBe("(image to next turn)");
   });
 });
 

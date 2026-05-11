@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-11
+
+### Added
+
+- **Sidebar Tool-preview overlay.** `TOOL_PREVIEW` messages from the agent
+  now render a modal in the sidebar with the tool name, formatted input
+  JSON, and Approve / Cancel buttons. The user's decision is sent back as
+  `PREVIEW_RESPONSE`. Without this UI in v0.4.0 the agent appeared to hang
+  whenever a destructive tool fired with `previewMode != "off"`.
+- **Sidebar Policy-warning banner.** `POLICY_WARNING` events render a
+  dismissable amber banner at the top of the message list listing the
+  heuristic patterns matched. Auto-removes after 12 s or on click.
+- **Options Safety-Policy section.** Allowlist and blocklist text areas
+  (one pattern per line, `*.domain` wildcards supported), preview-mode
+  select (`off` / `destructive` / `all`), and an injection-warning toggle
+  — persisted to `browser.storage.local.safetyPolicy`.
+- **New tool icons** in the sidebar for the v0.4.0 tools: `hover_element`,
+  `press_key`, `drag_drop`, `upload_file`, `list_tabs`, `switch_tab`,
+  `screenshot_for_vision`. Their `summarize()` cases now render readable
+  one-liners (e.g. `Ctrl+Shift+a` for `press_key`).
+
+### Changed
+
+- `tests/setup.js` unchanged; the existing `browser` mock plus jsdom
+  polyfills already cover the new code.
+
+### Quality
+
+- 510 tests (488 → 510). 100% coverage on lines / branches / functions /
+  statements across every file.
+- New test groups: sidebar TOOL_PREVIEW overlay (5), POLICY_WARNING banner
+  (5), options safety-policy panel (4), plus 9 new sidebar `summarize`
+  cases for the v0.4.0 tools.
+
 ## [0.4.0] - 2026-05-11
 
 ### Added — capability
@@ -132,7 +166,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `data_collection_permissions` declared in manifest per Firefox November 2025 requirement
 - Explicit `content_security_policy` to permit `http://localhost` for Ollama (works around the MV3 default that upgrades HTTP to HTTPS)
 
-[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/smaniches/firefox-llm-bridge/releases/tag/v0.2.0

@@ -29,11 +29,18 @@ const noProviderWarning = must(document.getElementById("no-provider-warning"));
 const btnOpenSettings = must(document.getElementById("btn-open-settings"));
 const modeChat = must(document.getElementById("mode-chat"));
 const modeAgent = must(document.getElementById("mode-agent"));
+const previewOverlay = must(document.getElementById("preview-overlay"));
+const previewToolName = must(document.getElementById("preview-tool-name"));
+const previewToolInput = must(document.getElementById("preview-tool-input"));
+const btnPreviewApprove = must(document.getElementById("btn-preview-approve"));
+const btnPreviewCancel = must(document.getElementById("btn-preview-cancel"));
 
 const state = {
   mode: "chat",
   port: null,
   isRunning: false,
+  /** @type {string | null} id of the in-flight TOOL_PREVIEW awaiting a response */
+  pendingPreviewId: null,
 };
 
 const RECONNECT_DELAY_MS = 500;
@@ -87,7 +94,60 @@ function handleMsg(msg) {
     case "HISTORY_CLEARED":
       clearMessages();
       break;
+    case "TOOL_PREVIEW":
+      showPreview(msg.id, msg.tool, msg.input);
+      break;
+    case "POLICY_WARNING":
+      addPolicyBanner(msg.message, msg.patterns);
+      break;
   }
+}
+
+/**
+ * Render the TOOL_PREVIEW overlay and wait for the user to approve or cancel.
+ * Stores the pending id so the click handlers know which preview to respond to.
+ */
+function showPreview(id, tool, input) {
+  state.pendingPreviewId = id;
+  previewToolName.textContent = tool;
+  previewToolInput.textContent = JSON.stringify(input ?? {}, null, 2);
+  previewOverlay.classList.remove("hidden");
+}
+
+/** Respond to the pending preview and hide the overlay. */
+function respondToPreview(approved) {
+  if (state.pendingPreviewId === null) return;
+  const id = state.pendingPreviewId;
+  state.pendingPreviewId = null;
+  previewOverlay.classList.add("hidden");
+  state.port?.postMessage({ type: "PREVIEW_RESPONSE", id, approved });
+}
+
+/**
+ * Render a transient policy warning banner above the message list.
+ * The banner self-removes after 12s or when the user clicks it.
+ */
+function addPolicyBanner(message, patterns) {
+  const div = document.createElement("div");
+  div.className = "policy-banner";
+  const title = document.createElement("span");
+  title.className = "policy-banner-title";
+  title.textContent = message || "Policy warning";
+  const pats = document.createElement("div");
+  pats.className = "policy-banner-patterns";
+  pats.textContent = Array.isArray(patterns) && patterns.length > 0 ? patterns.join(", ") : "";
+  div.appendChild(title);
+  div.appendChild(pats);
+
+  // Auto-dismiss after 12 s. Clear the timer on manual click so the callback
+  // does not fire against an already-detached node.
+  const timeoutId = setTimeout(() => div.remove(), 12000);
+  div.addEventListener("click", () => {
+    clearTimeout(timeoutId);
+    div.remove();
+  });
+
+  messagesEl.insertBefore(div, messagesEl.firstChild);
 }
 
 function updateStatus(status, message) {
@@ -301,6 +361,8 @@ btnStop.addEventListener("click", () => state.port.postMessage({ type: "STOP_AGE
 btnClear.addEventListener("click", () => state.port.postMessage({ type: "CLEAR_HISTORY" }));
 btnSettings.addEventListener("click", () => browser.runtime.openOptionsPage());
 btnOpenSettings.addEventListener("click", () => browser.runtime.openOptionsPage());
+btnPreviewApprove.addEventListener("click", () => respondToPreview(true));
+btnPreviewCancel.addEventListener("click", () => respondToPreview(false));
 modeChat.addEventListener("click", () => setMode("chat"));
 modeAgent.addEventListener("click", () => setMode("agent"));
 
