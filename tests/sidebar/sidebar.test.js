@@ -361,3 +361,105 @@ describe("sidebar: pending selection", () => {
     await expect(import("../../sidebar/sidebar.js")).resolves.toBeDefined();
   });
 });
+
+describe("sidebar: TOOL_PREVIEW overlay", () => {
+  it("shows the overlay with tool name and JSON-formatted input", async () => {
+    await setup();
+    handleMsg({
+      type: "TOOL_PREVIEW",
+      id: "preview-1",
+      tool: "click_element",
+      input: { selector: "#x" },
+    });
+    const overlay = document.getElementById("preview-overlay");
+    expect(overlay.classList.contains("hidden")).toBe(false);
+    expect(document.getElementById("preview-tool-name").textContent).toBe("click_element");
+    expect(document.getElementById("preview-tool-input").textContent).toContain('"selector"');
+    expect(document.getElementById("preview-tool-input").textContent).toContain("#x");
+  });
+
+  it("posts PREVIEW_RESPONSE { approved: true } on Approve click", async () => {
+    await setup();
+    handleMsg({ type: "TOOL_PREVIEW", id: "p2", tool: "navigate", input: { url: "https://x" } });
+    document.getElementById("btn-preview-approve").click();
+    const sent = port.postMessage.mock.calls.find((c) => c[0].type === "PREVIEW_RESPONSE");
+    expect(sent[0]).toEqual({ type: "PREVIEW_RESPONSE", id: "p2", approved: true });
+    expect(document.getElementById("preview-overlay").classList.contains("hidden")).toBe(true);
+  });
+
+  it("posts PREVIEW_RESPONSE { approved: false } on Cancel click", async () => {
+    await setup();
+    handleMsg({ type: "TOOL_PREVIEW", id: "p3", tool: "navigate", input: {} });
+    document.getElementById("btn-preview-cancel").click();
+    const sent = port.postMessage.mock.calls.find((c) => c[0].type === "PREVIEW_RESPONSE");
+    expect(sent[0].approved).toBe(false);
+    expect(document.getElementById("preview-overlay").classList.contains("hidden")).toBe(true);
+  });
+
+  it("Approve/Cancel are no-ops when no preview is pending", async () => {
+    await setup();
+    const before = port.postMessage.mock.calls.length;
+    document.getElementById("btn-preview-approve").click();
+    document.getElementById("btn-preview-cancel").click();
+    const after = port.postMessage.mock.calls.length;
+    expect(after).toBe(before);
+  });
+
+  it("renders {} as input when none is provided", async () => {
+    await setup();
+    handleMsg({ type: "TOOL_PREVIEW", id: "p4", tool: "screenshot", input: undefined });
+    expect(document.getElementById("preview-tool-input").textContent).toBe("{}");
+  });
+});
+
+describe("sidebar: POLICY_WARNING banner", () => {
+  it("inserts a policy-banner at the top of the messages list", async () => {
+    await setup();
+    handleMsg({
+      type: "POLICY_WARNING",
+      message: "Page content matched 2 heuristic patterns.",
+      patterns: ["ignore-previous", "system-override"],
+    });
+    const banner = document.querySelector(".policy-banner");
+    expect(banner).not.toBeNull();
+    expect(banner.querySelector(".policy-banner-title").textContent).toMatch(/heuristic/);
+    expect(banner.querySelector(".policy-banner-patterns").textContent).toBe(
+      "ignore-previous, system-override",
+    );
+  });
+
+  it("removes the banner when clicked", async () => {
+    await setup();
+    handleMsg({ type: "POLICY_WARNING", message: "x", patterns: ["a"] });
+    const banner = document.querySelector(".policy-banner");
+    banner.click();
+    expect(document.querySelector(".policy-banner")).toBeNull();
+  });
+
+  it("falls back to default title when message is missing", async () => {
+    await setup();
+    handleMsg({ type: "POLICY_WARNING", patterns: [] });
+    const banner = document.querySelector(".policy-banner");
+    expect(banner.querySelector(".policy-banner-title").textContent).toBe("Policy warning");
+  });
+
+  it("renders an empty patterns line when patterns is not an array", async () => {
+    await setup();
+    handleMsg({ type: "POLICY_WARNING", message: "Heads up", patterns: undefined });
+    const banner = document.querySelector(".policy-banner");
+    expect(banner.querySelector(".policy-banner-patterns").textContent).toBe("");
+  });
+
+  it("auto-removes the banner after 12 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      await setup();
+      handleMsg({ type: "POLICY_WARNING", message: "x", patterns: ["a"] });
+      expect(document.querySelector(".policy-banner")).not.toBeNull();
+      vi.advanceTimersByTime(12_001);
+      expect(document.querySelector(".policy-banner")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

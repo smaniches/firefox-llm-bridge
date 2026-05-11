@@ -97,6 +97,23 @@
         </div>
       </div>
 
+      <!-- Tool preview overlay (shown when policy.previewMode requests approval) -->
+      <div id="preview-overlay" class="hidden" role="dialog" aria-modal="true">
+        <div class="preview-card">
+          <div class="preview-header">
+            <strong>Approve this action?</strong>
+          </div>
+          <div class="preview-body">
+            <div class="preview-tool"><span id="preview-tool-name"></span></div>
+            <pre id="preview-tool-input"></pre>
+          </div>
+          <div class="preview-actions">
+            <button id="btn-preview-cancel" class="btn-secondary">Cancel</button>
+            <button id="btn-preview-approve" class="btn-primary-sm">Approve</button>
+          </div>
+        </div>
+      </div>
+
       <div id="stop-bar" class="hidden">
         <button id="btn-stop" class="btn-stop">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">

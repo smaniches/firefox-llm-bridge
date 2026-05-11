@@ -17,6 +17,13 @@ export const TOOL_ICONS = Object.freeze({
   wait: "⏳",
   go_back: "↩",
   get_tab_info: "ℹ",
+  hover_element: "🖱",
+  press_key: "⌨",
+  drag_drop: "✋",
+  upload_file: "📎",
+  list_tabs: "🗂",
+  switch_tab: "🔀",
+  screenshot_for_vision: "🔍",
   task_complete: "✅",
 });
 
@@ -82,6 +89,28 @@ export function summarize(tool, input) {
       return input.selector || "(full page)";
     case "wait":
       return `${input.milliseconds || 1000}ms`;
+    case "hover_element":
+      return input.selector ? input.selector.substring(0, 30) : `[${input.element_index}]`;
+    case "press_key": {
+      const mods = input.modifiers || {};
+      const parts = [];
+      if (mods.ctrl) parts.push("Ctrl");
+      if (mods.alt) parts.push("Alt");
+      if (mods.shift) parts.push("Shift");
+      if (mods.meta) parts.push("Meta");
+      parts.push(input.key || "");
+      return parts.filter(Boolean).join("+");
+    }
+    case "drag_drop":
+      return `${input.from_selector || `[${input.from_index}]`} → ${input.to_selector || `[${input.to_index}]`}`;
+    case "upload_file":
+      return input.file_name || "(file)";
+    case "switch_tab":
+      return `→ tab ${input.tab_id}`;
+    case "list_tabs":
+      return "(current window)";
+    case "screenshot_for_vision":
+      return "(image to next turn)";
     default:
       return "";
   }

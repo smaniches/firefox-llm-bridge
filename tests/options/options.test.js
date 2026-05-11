@@ -384,3 +384,70 @@ describe("options: safety panel", () => {
     expect(document.getElementById("safety-status").textContent).toMatch(/Must be 1-100/);
   });
 });
+
+describe("options: safety policy panel", () => {
+  beforeEach(async () => {
+    globalThis.fetch.mockResolvedValue(fetchResponse({ models: [] }));
+  });
+
+  it("restores stored policy fields on load", async () => {
+    await setup({
+      safetyPolicy: {
+        previewMode: "all",
+        allowlist: ["github.com", "*.wikipedia.org"],
+        blocklist: ["evil.example"],
+        warnOnInjectionPatterns: false,
+      },
+    });
+    expect(document.getElementById("policy-preview-mode").value).toBe("all");
+    expect(document.getElementById("policy-allowlist").value).toBe("github.com\n*.wikipedia.org");
+    expect(document.getElementById("policy-blocklist").value).toBe("evil.example");
+    expect(document.getElementById("policy-warn-injection").checked).toBe(false);
+  });
+
+  it("saves the policy on click", async () => {
+    await setup();
+    document.getElementById("policy-preview-mode").value = "off";
+    document.getElementById("policy-allowlist").value = "  github.com  \n\n*.wikipedia.org\n";
+    document.getElementById("policy-blocklist").value = "evil.example";
+    document.getElementById("policy-warn-injection").checked = false;
+    document.getElementById("policy-save").click();
+    await new Promise((r) => setTimeout(r, 5));
+
+    const call = globalThis.browser.storage.local.set.mock.calls.find(
+      (c) => c[0].safetyPolicy !== undefined,
+    );
+    expect(call[0].safetyPolicy).toEqual({
+      previewMode: "off",
+      allowlist: ["github.com", "*.wikipedia.org"],
+      blocklist: ["evil.example"],
+      warnOnInjectionPatterns: false,
+    });
+    expect(document.getElementById("policy-status").textContent).toMatch(/saved/i);
+  });
+
+  it("rejects an invalid preview mode", async () => {
+    await setup();
+    const sel = document.getElementById("policy-preview-mode");
+    // Force an invalid value (select normally constrains, but we override).
+    const opt = document.createElement("option");
+    opt.value = "yolo";
+    sel.appendChild(opt);
+    sel.value = "yolo";
+    document.getElementById("policy-save").click();
+    expect(document.getElementById("policy-status").textContent).toMatch(/Invalid/);
+  });
+
+  it("treats empty textareas as empty arrays", async () => {
+    await setup();
+    document.getElementById("policy-allowlist").value = "";
+    document.getElementById("policy-blocklist").value = "   \n\n  ";
+    document.getElementById("policy-save").click();
+    await new Promise((r) => setTimeout(r, 5));
+    const call = globalThis.browser.storage.local.set.mock.calls.find(
+      (c) => c[0].safetyPolicy !== undefined,
+    );
+    expect(call[0].safetyPolicy.allowlist).toEqual([]);
+    expect(call[0].safetyPolicy.blocklist).toEqual([]);
+  });
+});
