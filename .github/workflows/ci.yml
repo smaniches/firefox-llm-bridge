@@ -14,10 +14,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  probe:
+    name: Diagnostic probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Echo runner info
+        run: |
+          echo "RUNNER_OS=$RUNNER_OS"
+          echo "RUNNER_ARCH=$RUNNER_ARCH"
+          uname -a
+          which node || echo "no node"
+          node -v || echo "node not present"
+          which npm || echo "no npm"
+          npm -v || echo "npm not present"
+          echo "current dir: $(pwd)"
+          ls -la
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: After-checkout listing
+        run: |
+          echo "After checkout:"
+          ls -la
+          test -f package.json && echo "package.json present" || echo "MISSING package.json"
+          test -f package-lock.json && echo "package-lock.json present" || echo "MISSING package-lock.json"
+
   test:
     name: Lint, typecheck, test, web-ext lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: probe
     steps:
       - name: Checkout
         uses: actions/checkout@v4
