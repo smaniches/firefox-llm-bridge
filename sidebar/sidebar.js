@@ -138,9 +138,16 @@ function addPolicyBanner(message, patterns) {
   pats.textContent = Array.isArray(patterns) && patterns.length > 0 ? patterns.join(", ") : "";
   div.appendChild(title);
   div.appendChild(pats);
-  div.addEventListener("click", () => div.remove());
+
+  // Auto-dismiss after 12 s. Clear the timer on manual click so the callback
+  // does not fire against an already-detached node.
+  const timeoutId = setTimeout(() => div.remove(), 12000);
+  div.addEventListener("click", () => {
+    clearTimeout(timeoutId);
+    div.remove();
+  });
+
   messagesEl.insertBefore(div, messagesEl.firstChild);
-  setTimeout(() => div.remove(), 12000);
 }
 
 function updateStatus(status, message) {

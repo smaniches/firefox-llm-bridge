@@ -77,7 +77,7 @@ export function summarize(tool, input) {
     case "navigate":
       return input.url ? `→ ${safeHostname(input.url)}` : "";
     case "click_element":
-      return input.selector ? input.selector.substring(0, 30) : `[${input.element_index}]`;
+      return input.selector ? input.selector.substring(0, 30) : `[${input.element_index ?? "?"}]`;
     case "type_text": {
       const text = input.text || "";
       const truncated = text.length > 20 ? `${text.substring(0, 20)}...` : text;
@@ -90,7 +90,7 @@ export function summarize(tool, input) {
     case "wait":
       return `${input.milliseconds || 1000}ms`;
     case "hover_element":
-      return input.selector ? input.selector.substring(0, 30) : `[${input.element_index}]`;
+      return input.selector ? input.selector.substring(0, 30) : `[${input.element_index ?? "?"}]`;
     case "press_key": {
       const mods = input.modifiers || {};
       const parts = [];
@@ -102,7 +102,7 @@ export function summarize(tool, input) {
       return parts.filter(Boolean).join("+");
     }
     case "drag_drop":
-      return `${input.from_selector || `[${input.from_index}]`} → ${input.to_selector || `[${input.to_index}]`}`;
+      return `${input.from_selector || `[${input.from_index ?? "?"}]`} → ${input.to_selector || `[${input.to_index ?? "?"}]`}`;
     case "upload_file":
       return input.file_name || "(file)";
     case "switch_tab":

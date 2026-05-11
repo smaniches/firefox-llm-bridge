@@ -462,4 +462,22 @@ describe("sidebar: POLICY_WARNING banner", () => {
       vi.useRealTimers();
     }
   });
+
+  it("manual dismiss cancels the auto-remove timeout (no double-remove)", async () => {
+    vi.useFakeTimers();
+    try {
+      await setup();
+      handleMsg({ type: "POLICY_WARNING", message: "x", patterns: ["a"] });
+      const banner = document.querySelector(".policy-banner");
+      banner.click();
+      expect(document.querySelector(".policy-banner")).toBeNull();
+      // Advance past the auto-remove deadline; the cleared timer must not
+      // fire a remove() on the (already detached) element.
+      const removeSpy = vi.spyOn(banner, "remove");
+      vi.advanceTimersByTime(20_000);
+      expect(removeSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

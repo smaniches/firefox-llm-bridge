@@ -109,6 +109,10 @@ describe("summarize", () => {
     expect(summarize("click_element", { element_index: 7 })).toBe("[7]");
   });
 
+  it("click_element shows [?] when neither selector nor index is given", () => {
+    expect(summarize("click_element", {})).toBe("[?]");
+  });
+
   it("type_text truncates at 20 chars and adds ellipsis", () => {
     expect(summarize("type_text", { text: "x".repeat(50) })).toMatch(/\.\.\."$/);
   });
@@ -141,9 +145,10 @@ describe("summarize", () => {
     expect(summarize("task_complete", { summary: "done" })).toBe("");
   });
 
-  it("hover_element prefers selector then index", () => {
+  it("hover_element prefers selector then index, with [?] fallback", () => {
     expect(summarize("hover_element", { selector: ".x" })).toBe(".x");
     expect(summarize("hover_element", { element_index: 3 })).toBe("[3]");
+    expect(summarize("hover_element", {})).toBe("[?]");
   });
 
   it("press_key formats modifiers + key", () => {
@@ -173,6 +178,10 @@ describe("summarize", () => {
         to_index: 2,
       }),
     ).toBe("[1] → [2]");
+  });
+
+  it("drag_drop shows [?] when both endpoints are missing", () => {
+    expect(summarize("drag_drop", {})).toBe("[?] → [?]");
   });
 
   it("upload_file shows the file_name", () => {
