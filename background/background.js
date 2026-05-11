@@ -315,4 +315,19 @@ browser.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === "bridge-explain") { await browser.sidebarAction.open(); await browser.storage.session.set({ pendingSelection: info.selectionText }); }
 });
 
-console.log("[Firefox LLM Bridge] Initialized.");
+console.info("[Firefox LLM Bridge] Initialized.");
+
+// Exports for unit testing. The module-level side effects above (onConnect,
+// contextMenus.create, storage.onChanged.addListener) run on import even in
+// test environments — they register against the mocked `browser` global.
+export {
+  state,
+  BROWSER_TOOLS,
+  SYSTEM_PROMPT,
+  executeTool,
+  sleep,
+  runAgentLoop,
+  runChatOnly,
+  send,
+  loadSettings,
+};
