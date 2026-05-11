@@ -6,6 +6,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-11
+
+### Added — capability
+
+- **Shadow DOM traversal** in `content/sensor.js`: open shadow roots are walked
+  and their interactive elements appear in the semantic map with `shadow: true`.
+- **Same-origin iframe traversal**: same-origin frames are descended into;
+  cross-origin frames emit an `iframe` entry without breaching the boundary.
+- **`all_frames: true`** content-script registration so the sensor is reachable
+  in nested same-origin frames.
+- **New actor tools**:
+  - `hover_element` — dispatches mouseover/mouseenter/mousemove with optional
+    dwell (capped at 5000 ms).
+  - `press_key` — named keys (Enter, Escape, Tab, Arrow\*, …) and single
+    characters; supports ctrl/alt/shift/meta modifiers; targets the focused
+    element when no selector is given.
+  - `drag_drop` — full HTML5 drag sequence (dragstart, drag, dragenter,
+    dragover, drop, dragend) with a real `DataTransfer` payload.
+  - `upload_file` — drops a base64-encoded file into a real
+    `<input type="file">` via `DataTransfer`, firing change/input events.
+- **Multi-tab**: `list_tabs` and `switch_tab` tools so the agent can operate
+  across the current window.
+- **Vision**: `screenshot_for_vision` tool attaches the captured image to the
+  next model turn as a real image content block. Each provider translates to
+  its native format:
+  - Anthropic: `{ type: "image", source: { base64, media_type } }`
+  - OpenAI / Ollama: `{ type: "image_url", image_url: { url: dataUrl } }`
+  - Google Gemini: `{ inlineData: { mimeType, data } }`
+- Shared `background/lib/vision.js` helper module.
+
+### Added — safety
+
+- New `background/lib/policy.js` module: domain allow/blocklist,
+  preview-before-action mode (`off` / `destructive` / `all`), and heuristic
+  prompt-injection patterns (ignore-previous, system-override, credential
+  exfiltration, role impersonation, hidden markers).
+- Domain-level navigation control: `navigate` calls are denied when the host
+  matches the user's blocklist or falls outside a non-empty allowlist. The
+  denial is reported as a `TOOL_RESULT` so the model can recover.
+- Preview gate: destructive tool calls surface a `TOOL_PREVIEW` message and
+  wait for the user's `PREVIEW_RESPONSE` (approve / cancel). Default mode is
+  "destructive", with read-only tools auto-approved.
+- Page content is wrapped with explicit `[BEGIN UNTRUSTED PAGE CONTENT … END]`
+  framing before it reaches the LLM, and a `POLICY_WARNING` message is emitted
+  on heuristic injection-pattern matches.
+
+### Added — quality
+
+- `background/lib/policy.js`, `background/lib/vision.js` — both at 100% test
+  coverage.
+- New test files: `tests/lib/policy.test.js` (42 tests),
+  `tests/lib/vision.test.js` (10 tests).
+- Extended sensor tests for shadow DOM, iframes, hover, press_key, drag/drop,
+  file upload, and cached-ref vs. selector-fallback resolution.
+- Extended background tests for every new tool, every new policy path, the
+  preview round-trip, and vision image attachment.
+- jsdom polyfills for `DataTransfer`, `DragEvent`, and a permissive
+  `HTMLInputElement.files` setter so the new actor tools are testable.
+- Total tests: 488. Coverage: 100% on lines, branches, functions, statements.
+
+### Changed
+
+- `content/sensor.js` was modified for the new capability. The previous
+  CLAUDE.md prohibition is lifted by explicit instruction in the v0.4.0 work.
+- `resolveElement` now uses cached `Element` references first (works through
+  shadow roots and iframes), falling back to `document.querySelector` for
+  light-DOM selectors.
+
 ## [0.3.0] - 2026-05-11
 
 ### Added
@@ -64,6 +132,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `data_collection_permissions` declared in manifest per Firefox November 2025 requirement
 - Explicit `content_security_policy` to permit `http://localhost` for Ollama (works around the MV3 default that upgrades HTTP to HTTPS)
 
-[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/smaniches/firefox-llm-bridge/releases/tag/v0.2.0

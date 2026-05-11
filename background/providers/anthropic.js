@@ -6,6 +6,8 @@
  * Tool calls use input_schema, content blocks, tool_result messages.
  */
 
+import { parseDataUrl } from "../lib/vision.js";
+
 export const anthropic = {
   id: "anthropic",
   name: "Anthropic Claude",
@@ -36,11 +38,28 @@ export const anthropic = {
   },
 
   /**
-   * Anthropic messages are passed as-is (our internal format matches Anthropic's).
-   * Tool results must be user messages with tool_result content blocks.
+   * Convert our unified message stream to Anthropic format.
+   *
+   * Anthropic's native format already matches ours for text, tool_use, and
+   * tool_result blocks, so most messages pass through. The one transformation
+   * is the `{type:"image", dataUrl}` block we use for vision payloads — it
+   * becomes `{type:"image", source:{type:"base64", media_type, data}}`.
    */
   formatMessages(messages) {
-    return messages;
+    return messages.map((msg) => {
+      if (!Array.isArray(msg.content)) return msg;
+      const blocks = msg.content.map((b) => {
+        if (b.type === "image" && b.dataUrl) {
+          const parsed = parseDataUrl(b.dataUrl);
+          return {
+            type: "image",
+            source: { type: "base64", media_type: parsed.mediaType, data: parsed.data },
+          };
+        }
+        return b;
+      });
+      return { ...msg, content: blocks };
+    });
   },
 
   /**

@@ -125,6 +125,46 @@ beforeEach(() => {
   } else if (typeof globalThis.CSS.escape !== "function") {
     globalThis.CSS.escape = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, (c) => "\\" + c);
   }
+
+  // jsdom does not implement DataTransfer or DragEvent. Provide a minimal
+  // polyfill sufficient for the sensor's drag-and-drop and file-upload tools.
+  if (typeof globalThis.DataTransfer === "undefined") {
+    globalThis.DataTransfer = class DataTransfer {
+      constructor() {
+        const list = [];
+        list.add = (file) => list.push(file);
+        this.items = list;
+        Object.defineProperty(this, "files", { get: () => list });
+      }
+    };
+  }
+  if (typeof globalThis.DragEvent === "undefined") {
+    globalThis.DragEvent = class DragEvent extends Event {
+      constructor(type, init = {}) {
+        super(type, init);
+        this.clientX = init.clientX || 0;
+        this.clientY = init.clientY || 0;
+        this.dataTransfer = init.dataTransfer || null;
+      }
+    };
+  }
+
+  // jsdom's HTMLInputElement.files setter rejects non-FileList values. The
+  // sensor uses DataTransfer.files (which is a real FileList in real browsers
+  // but an array under our polyfill). Override the setter on the prototype
+  // for tests so production code can assign without conversion.
+  if (typeof HTMLInputElement !== "undefined") {
+    const orig = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files");
+    Object.defineProperty(HTMLInputElement.prototype, "files", {
+      configurable: true,
+      get() {
+        return this.__files || (orig && orig.get && orig.get.call(this)) || null;
+      },
+      set(v) {
+        this.__files = v;
+      },
+    });
+  }
 });
 
 afterEach(() => {

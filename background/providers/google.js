@@ -7,6 +7,8 @@
  * functionCall parts, and functionResponse for results.
  */
 
+import { parseDataUrl } from "../lib/vision.js";
+
 export const google = {
   id: "google",
   name: "Google Gemini",
@@ -98,6 +100,24 @@ export const google = {
             },
           }));
           contents.push({ role: "user", parts });
+        } else if (Array.isArray(msg.content)) {
+          // Multi-part user message — convert image blocks to Gemini's
+          // inlineData parts and text blocks to text parts.
+          const parts = msg.content
+            .map((b) => {
+              if (b.type === "image" && b.dataUrl) {
+                const parsed = parseDataUrl(b.dataUrl);
+                return {
+                  inlineData: { mimeType: parsed.mediaType, data: parsed.data },
+                };
+              }
+              if (b.type === "text" && typeof b.text === "string") {
+                return { text: b.text };
+              }
+              return null;
+            })
+            .filter(Boolean);
+          if (parts.length > 0) contents.push({ role: "user", parts });
         } else {
           // Regular user message
           const text = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);

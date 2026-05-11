@@ -151,6 +151,40 @@ describe("google provider", () => {
       expect(out[0].parts).toHaveLength(1);
       expect(out[0].parts[0].functionCall).toBeDefined();
     });
+
+    it("converts image blocks to inlineData parts", () => {
+      const out = google.formatMessages([
+        {
+          role: "user",
+          content: [
+            { type: "image", dataUrl: "data:image/jpeg;base64,/9j/4AA" },
+            { type: "text", text: "describe" },
+          ],
+        },
+      ]);
+      expect(out[0].role).toBe("user");
+      expect(out[0].parts).toEqual([
+        { inlineData: { mimeType: "image/jpeg", data: "/9j/4AA" } },
+        { text: "describe" },
+      ]);
+    });
+
+    it("drops unknown blocks from a user content array", () => {
+      const out = google.formatMessages([
+        {
+          role: "user",
+          content: [{ type: "image" }, { type: "weird" }, { type: "text", text: "ok" }],
+        },
+      ]);
+      expect(out[0].parts).toEqual([{ text: "ok" }]);
+    });
+
+    it("skips a user array with no usable parts", () => {
+      const out = google.formatMessages([
+        { role: "user", content: [{ type: "image" }, { type: "weird" }] },
+      ]);
+      expect(out).toEqual([]);
+    });
   });
 
   describe("call", () => {

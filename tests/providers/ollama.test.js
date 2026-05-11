@@ -146,6 +146,32 @@ describe("ollama provider", () => {
       ]);
       expect(out[0].content).toBeNull();
     });
+
+    it("formatMessages converts image+text array to multi-part parts", () => {
+      const out = ollama.formatMessages([
+        {
+          role: "user",
+          content: [
+            { type: "image", dataUrl: "data:image/png;base64,xxx" },
+            { type: "text", text: "what?" },
+          ],
+        },
+      ]);
+      expect(out[0].content).toEqual([
+        { type: "image_url", image_url: { url: "data:image/png;base64,xxx" } },
+        { type: "text", text: "what?" },
+      ]);
+    });
+
+    it("formatMessages drops unknown blocks from user array", () => {
+      const out = ollama.formatMessages([
+        {
+          role: "user",
+          content: [{ type: "image" }, { type: "weird" }, { type: "text", text: "ok" }],
+        },
+      ]);
+      expect(out[0].content).toEqual([{ type: "text", text: "ok" }]);
+    });
   });
 
   describe("call", () => {

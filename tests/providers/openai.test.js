@@ -97,6 +97,33 @@ describe("openai provider", () => {
       const out = openai.formatMessages([{ role: "assistant", content: "plain" }]);
       expect(out[0]).toEqual({ role: "assistant", content: "plain" });
     });
+
+    it("converts user image+text array to OpenAI multi-part parts", () => {
+      const out = openai.formatMessages([
+        {
+          role: "user",
+          content: [
+            { type: "image", dataUrl: "data:image/png;base64,xxx" },
+            { type: "text", text: "describe" },
+          ],
+        },
+      ]);
+      expect(out[0].role).toBe("user");
+      expect(out[0].content).toEqual([
+        { type: "image_url", image_url: { url: "data:image/png;base64,xxx" } },
+        { type: "text", text: "describe" },
+      ]);
+    });
+
+    it("drops unknown block types from a user content array", () => {
+      const out = openai.formatMessages([
+        {
+          role: "user",
+          content: [{ type: "image" }, { type: "weird" }, { type: "text", text: "ok" }],
+        },
+      ]);
+      expect(out[0].content).toEqual([{ type: "text", text: "ok" }]);
+    });
   });
 
   describe("call", () => {
