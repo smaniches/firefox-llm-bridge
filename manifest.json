@@ -4,7 +4,7 @@
   "version": "0.5.2",
   "description": "An open-source AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs (Ollama, Claude, GPT, Gemini).",
   "author": "Santiago Maniches / TOPOLOGICA LLC",
-  "homepage_url": "https://topologica.app",
+  "homepage_url": "https://topologica.ai",
   "default_locale": "en",
 
   "browser_specific_settings": {

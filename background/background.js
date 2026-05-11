@@ -29,6 +29,8 @@ const DEFAULT_MAX_HISTORY = 50;
 const state = {
   conversationHistory: [],
   currentTabId: null,
+  /** Window the sidebar is embedded in — used to scope tab queries and screenshots. */
+  currentWindowId: null,
   isAgentRunning: false,
   abortController: null,
   maxTurns: 25,
@@ -345,7 +347,10 @@ async function executeTool(toolName, toolInput) {
         });
       case "screenshot":
         return {
-          image: await browser.tabs.captureVisibleTab(null, { format: "png", quality: 85 }),
+          image: await browser.tabs.captureVisibleTab(state.currentWindowId, {
+            format: "png",
+            quality: 85,
+          }),
         };
       case "wait":
         await sleep(toolInput.milliseconds || 1000);
@@ -403,7 +408,9 @@ async function executeTool(toolName, toolInput) {
         return r;
       }
       case "list_tabs": {
-        const tabs = await browser.tabs.query({ currentWindow: true });
+        const tabs = await browser.tabs.query(
+          state.currentWindowId ? { windowId: state.currentWindowId } : { currentWindow: true },
+        );
         return {
           tabs: tabs.map((t) => ({
             id: t.id,
@@ -422,7 +429,10 @@ async function executeTool(toolName, toolInput) {
       }
       case "screenshot_for_vision":
         return {
-          image: await browser.tabs.captureVisibleTab(null, { format: "png", quality: 85 }),
+          image: await browser.tabs.captureVisibleTab(state.currentWindowId, {
+            format: "png",
+            quality: 85,
+          }),
           forVision: true,
         };
       case "download_file": {
@@ -575,7 +585,7 @@ function pushPendingVisionImage(history) {
 // AGENT LOOP
 // ============================================================
 
-async function runAgentLoop(userMessage, port) {
+async function runAgentLoop(userMessage, port, windowId) {
   state.isAgentRunning = true;
   state.turnCount = 0;
   state.abortController = new AbortController();
@@ -583,7 +593,9 @@ async function runAgentLoop(userMessage, port) {
   state.pendingPreviews.clear();
   state.pendingVisionImage = null;
 
-  const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
+  state.currentWindowId = windowId || null;
+  const tabQuery = windowId ? { active: true, windowId } : { active: true, currentWindow: true };
+  const [activeTab] = await browser.tabs.query(tabQuery);
   if (activeTab) state.currentTabId = activeTab.id;
 
   state.conversationHistory.push({ role: "user", content: userMessage });
@@ -762,15 +774,17 @@ async function runAgentLoop(userMessage, port) {
 // CHAT-ONLY MODE
 // ============================================================
 
-async function runChatOnly(userMessage, port) {
+async function runChatOnly(userMessage, port, windowId) {
   state.isAgentRunning = true;
   state.abortController = new AbortController();
   state.policy = await loadPolicy();
+  state.currentWindowId = windowId || null;
 
   let pageContext = "";
   let injectionMatches = [];
   try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const tabQuery = windowId ? { active: true, windowId } : { active: true, currentWindow: true };
+    const [tab] = await browser.tabs.query(tabQuery);
     if (tab) {
       state.currentTabId = tab.id;
       const t = await browser.tabs.sendMessage(tab.id, { type: "SENSOR_EXTRACT_TEXT" });
@@ -880,7 +894,7 @@ browser.runtime.onConnect.addListener((port) => {
           return;
         }
         await loadSettings();
-        runAgentLoop(msg.text, port);
+        runAgentLoop(msg.text, port, msg.windowId);
         break;
       case "STOP_AGENT":
         if (state.abortController) state.abortController.abort();
@@ -920,7 +934,7 @@ browser.runtime.onConnect.addListener((port) => {
       case "CHAT_ONLY":
         if (state.isAgentRunning) return;
         await loadSettings();
-        runChatOnly(msg.text, port);
+        runChatOnly(msg.text, port, msg.windowId);
         break;
       case "PREVIEW_RESPONSE": {
         const resolver = state.pendingPreviews.get(msg.id);

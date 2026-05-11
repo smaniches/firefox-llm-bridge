@@ -427,6 +427,16 @@ describe("executeTool", () => {
     expect(r.tabs[0]).toEqual({ id: 1, url: "https://a", title: "A", active: true });
   });
 
+  it("list_tabs scopes query to currentWindowId when set", async () => {
+    bridge.state.currentWindowId = 7;
+    globalThis.browser.tabs.query.mockResolvedValueOnce([
+      { id: 3, url: "https://c", title: "C", active: true },
+    ]);
+    await bridge.executeTool("list_tabs", {});
+    expect(globalThis.browser.tabs.query).toHaveBeenCalledWith({ windowId: 7 });
+    bridge.state.currentWindowId = null;
+  });
+
   it("switch_tab activates tab and updates state", async () => {
     const r = await bridge.executeTool("switch_tab", { tab_id: 42 });
     expect(globalThis.browser.tabs.update).toHaveBeenCalledWith(42, { active: true });
@@ -811,6 +821,19 @@ describe("runAgentLoop", () => {
   function makePort() {
     return { postMessage: vi.fn() };
   }
+
+  it("scopes the active-tab query to a specific windowId when provided", async () => {
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "text", text: "done" }],
+      stop_reason: "end_turn",
+    });
+    const port = makePort();
+    await bridge.runAgentLoop("hi", port, 42);
+    expect(globalThis.browser.tabs.query).toHaveBeenCalledWith(
+      expect.objectContaining({ active: true, windowId: 42 }),
+    );
+    expect(bridge.state.currentWindowId).toBe(42);
+  });
 
   it("emits ASSISTANT_TEXT and exits on end_turn", async () => {
     providers.callLLM.mockResolvedValueOnce({
@@ -1205,6 +1228,19 @@ describe("runAgentLoop", () => {
 });
 
 describe("runChatOnly", () => {
+  it("scopes the active-tab query to a specific windowId when provided", async () => {
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "text", text: "ok" }],
+      stop_reason: "end_turn",
+    });
+    const port = { postMessage: vi.fn() };
+    await bridge.runChatOnly("q", port, 99);
+    expect(globalThis.browser.tabs.query).toHaveBeenCalledWith(
+      expect.objectContaining({ active: true, windowId: 99 }),
+    );
+    expect(bridge.state.currentWindowId).toBe(99);
+  });
+
   it("includes page context and emits ASSISTANT_TEXT", async () => {
     providers.callLLM.mockResolvedValueOnce({
       content: [{ type: "text", text: "answer" }],

@@ -39,6 +39,8 @@ const costCounter = must(document.getElementById("cost-counter"));
 const state = {
   mode: "chat",
   port: null,
+  /** Firefox window ID — resolved once at startup, sent with every message. */
+  windowId: null,
   isRunning: false,
   /** @type {string | null} id of the in-flight TOOL_PREVIEW awaiting a response */
   pendingPreviewId: null,
@@ -486,6 +488,7 @@ function sendMessage() {
   state.port.postMessage({
     type: state.mode === "agent" ? "SEND_MESSAGE" : "CHAT_ONLY",
     text,
+    windowId: state.windowId,
   });
 }
 
@@ -550,6 +553,13 @@ btnPreviewApprove.addEventListener("click", () => respondToPreview(true));
 btnPreviewCancel.addEventListener("click", () => respondToPreview(false));
 modeChat.addEventListener("click", () => setMode("chat"));
 modeAgent.addEventListener("click", () => setMode("agent"));
+
+// Resolve the sidebar's window ID once at startup. Sent with every message so
+// the background can scope tab queries and screenshots to this window rather
+// than relying on "currentWindow" (which is undefined in service workers).
+browser.windows.getCurrent().then(({ id }) => {
+  state.windowId = id;
+});
 
 bindQuick();
 connectPort();

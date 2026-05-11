@@ -6,7 +6,7 @@ The full text is available at the link above.
 
 ## Reporting
 
-Concerns about behavior in project spaces (issues, pull requests, discussions, commit messages) may be reported privately to **conduct@topologica.app**.
+Concerns about behavior in project spaces (issues, pull requests, discussions, commit messages) may be reported privately to **conduct@topologica.ai**.
 
 Reports are handled confidentially. The maintainers will respond within five business days.
 
