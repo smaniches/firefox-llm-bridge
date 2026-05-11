@@ -469,7 +469,11 @@ async function persistSession() {
   try {
     await browser.storage.local.set({
       [PERSIST_KEY]: {
-        conversationHistory: state.conversationHistory,
+        // Vision base64 payloads (1–5 MB each) and tool_result blobs would
+        // quickly exhaust the 10 MB local-storage quota. Strip them before
+        // persisting — restored sessions show the text trail, not the
+        // image/tool-result internals.
+        conversationHistory: persistableHistory(state.conversationHistory),
         cost: state.cost,
         turnCount: state.turnCount,
       },
@@ -477,6 +481,40 @@ async function persistSession() {
   } catch {
     /* storage unavailable */
   }
+}
+
+/**
+ * Project conversationHistory to a slim, storage-safe form: text-only.
+ * Drops content arrays containing tool_result, tool_use, or image blocks
+ * — they're either internal scaffolding or megabyte-scale payloads. What
+ * survives is the user-facing text trail, identical to what the sidebar
+ * shows when it replays a restored session.
+ *
+ * @param {Array<{ role: string, content: any }>} history
+ * @returns {Array<{ role: string, content: string }>}
+ */
+function persistableHistory(history) {
+  /** @type {Array<{ role: string, content: string }>} */
+  const out = [];
+  for (const msg of history) {
+    if (msg.role === "user") {
+      if (typeof msg.content === "string") {
+        out.push({ role: "user", content: msg.content });
+      }
+      // Arrays (tool_result, image) are internal — skip.
+    } else if (msg.role === "assistant") {
+      if (typeof msg.content === "string" && msg.content.length > 0) {
+        out.push({ role: "assistant", content: msg.content });
+      } else if (Array.isArray(msg.content)) {
+        const text = msg.content
+          .filter((b) => b.type === "text" && typeof b.text === "string")
+          .map((b) => b.text)
+          .join("");
+        if (text.length > 0) out.push({ role: "assistant", content: text });
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -967,11 +1005,25 @@ loadSettings();
 restoreSession();
 browser.storage.onChanged.addListener(() => loadSettings());
 
-browser.contextMenus.create({
-  id: "bridge-explain",
-  title: "Ask LLM Bridge about selection",
-  contexts: ["selection"],
-});
+// `contextMenus.create` throws if the id already exists. That happens when
+// the background module is re-evaluated (service-worker restart, dev reload).
+// Wrap in try/catch and check runtime.lastError to swallow the duplicate-id
+// case silently.
+try {
+  browser.contextMenus.create(
+    {
+      id: "bridge-explain",
+      title: "Ask LLM Bridge about selection",
+      contexts: ["selection"],
+    },
+    () => {
+      // Touch lastError so the runtime doesn't log it.
+      void browser.runtime.lastError;
+    },
+  );
+} catch {
+  /* duplicate id — already registered, ignore */
+}
 browser.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === "bridge-explain") {
     await browser.sidebarAction.open();

@@ -119,4 +119,40 @@ describe("normalizeUsage", () => {
       completionTokens: 0,
     });
   });
+
+  it("handles Infinity, NaN, and non-numeric strings as zero", () => {
+    expect(normalizeUsage({ prompt_tokens: Infinity })).toEqual({
+      promptTokens: 0,
+      completionTokens: 0,
+    });
+    expect(normalizeUsage({ prompt_tokens: NaN })).toEqual({
+      promptTokens: 0,
+      completionTokens: 0,
+    });
+    expect(normalizeUsage({ prompt_tokens: "garbage" })).toEqual({
+      promptTokens: 0,
+      completionTokens: 0,
+    });
+  });
+
+  it("truncates fractional token counts toward zero (avoids drift)", () => {
+    expect(normalizeUsage({ prompt_tokens: 1.7, completion_tokens: 2.999 })).toEqual({
+      promptTokens: 1,
+      completionTokens: 2,
+    });
+  });
+
+  it("preserves values past the 32-bit signed-integer limit (2^31)", () => {
+    expect(normalizeUsage({ prompt_tokens: 3_000_000_000 })).toEqual({
+      promptTokens: 3_000_000_000,
+      completionTokens: 0,
+    });
+  });
+
+  it("coerces numeric strings via Number(...)", () => {
+    expect(normalizeUsage({ prompt_tokens: "42" })).toEqual({
+      promptTokens: 42,
+      completionTokens: 0,
+    });
+  });
 });

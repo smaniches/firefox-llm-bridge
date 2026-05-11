@@ -91,7 +91,22 @@ export function normalizeUsage(usage) {
     usage.candidatesTokenCount ??
     0;
   return {
-    promptTokens: Math.max(0, prompt | 0),
-    completionTokens: Math.max(0, completion | 0),
+    promptTokens: clampNonNegativeInt(prompt),
+    completionTokens: clampNonNegativeInt(completion),
   };
+}
+
+/**
+ * Coerce `n` to a non-negative finite integer. Truncates toward zero so a
+ * fractional token count cannot accumulate rounding error across a session.
+ * Returns 0 for NaN, Infinity, non-numbers, or negative values. Unlike
+ * bitwise `| 0`, this preserves precision past 2^31 — sessions in the
+ * billions of tokens still accumulate correctly.
+ *
+ * @param {unknown} n
+ */
+function clampNonNegativeInt(n) {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  return Math.trunc(v);
 }

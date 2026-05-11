@@ -1514,4 +1514,27 @@ describe("context menu", () => {
     await handler({ menuItemId: "other" });
     expect(globalThis.browser.sidebarAction.open.mock.calls.length).toBe(before);
   });
+
+  it("invokes the create callback so runtime.lastError is touched", () => {
+    const call = globalThis.browser.contextMenus.create.mock.calls.find(
+      (c) => c[0]?.id === "bridge-explain",
+    );
+    expect(typeof call[1]).toBe("function");
+    // The callback executes safely — no throw.
+    expect(() => call[1]()).not.toThrow();
+  });
+
+  it("tolerates contextMenus.create throwing on duplicate id (service-worker restart)", async () => {
+    // Re-import the module with contextMenus.create rigged to throw on the
+    // second registration. The module-level catch must swallow it so the
+    // rest of the side effects (onConnect, storage.onChanged) still run.
+    vi.resetModules();
+    let calls = 0;
+    globalThis.browser.contextMenus.create.mockImplementationOnce(() => {
+      calls++;
+      throw new Error("Cannot create item with duplicate id bridge-explain");
+    });
+    await expect(import("../../background/background.js")).resolves.toBeDefined();
+    expect(calls).toBe(1);
+  });
 });

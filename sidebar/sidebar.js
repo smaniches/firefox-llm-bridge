@@ -42,8 +42,17 @@ const state = {
   isRunning: false,
   /** @type {string | null} id of the in-flight TOOL_PREVIEW awaiting a response */
   pendingPreviewId: null,
-  /** @type {{ id: string, el: HTMLElement, text: string } | null} */
+  /** @type {{ id: string, el: HTMLElement, text: string, rafHandle: number } | null} */
   streaming: null,
+  /**
+   * Text rendered by the most recently finalized stream. The trailing
+   * ASSISTANT_TEXT after a successful stream is a duplicate (background
+   * emits it as the canonical end-of-turn marker). When it matches the
+   * just-streamed text, suppress it. Consumed by the first matching
+   * ASSISTANT_TEXT and cleared.
+   * @type {string | null}
+   */
+  lastStreamedText: null,
 };
 
 const RECONNECT_DELAY_MS = 500;
@@ -51,7 +60,19 @@ const RECONNECT_DELAY_MS = 500;
 function connectPort() {
   state.port = browser.runtime.connect({ name: "topologica-sidebar" });
   state.port.onMessage.addListener(handleMsg);
-  state.port.onDisconnect.addListener(() => setTimeout(connectPort, RECONNECT_DELAY_MS));
+  state.port.onDisconnect.addListener(() => {
+    // The background side may have torn down (service-worker restart). Any
+    // in-flight streaming state belongs to the dead port — clear it so the
+    // reconnect doesn't try to keep painting deltas into a stale bubble.
+    if (state.streaming) {
+      if (state.streaming.rafHandle) cancelAnimationFrame(state.streaming.rafHandle);
+      state.streaming.el.classList.remove("streaming");
+      state.streaming = null;
+    }
+    state.pendingPreviewId = null;
+    state.lastStreamedText = null;
+    setTimeout(connectPort, RECONNECT_DELAY_MS);
+  });
   state.port.postMessage({ type: "GET_STATUS" });
 }
 
@@ -80,10 +101,21 @@ function handleMsg(msg) {
       updateCostCounter(msg.cost);
       break;
     case "ASSISTANT_TEXT":
-      // Non-streaming providers (or end-of-turn marker after a stream). When
-      // a stream was just finalized with the same text content we skip the
-      // duplicate; otherwise render the message normally.
-      if (state.streaming === null) addMessage("assistant", msg.text);
+      // Three cases to handle:
+      //   1. A stream is still active (state.streaming !== null) — deltas
+      //      are rendering live; skip the message.
+      //   2. A stream just finalized with text matching this ASSISTANT_TEXT
+      //      (state.lastStreamedText === msg.text) — this is the canonical
+      //      end-of-turn duplicate; consume the flag and skip.
+      //   3. Anything else (system "turn limit" message, non-streaming
+      //      fallback, follow-up text after a tool turn) — render.
+      if (state.streaming !== null) break;
+      if (state.lastStreamedText !== null && state.lastStreamedText === msg.text) {
+        state.lastStreamedText = null;
+        break;
+      }
+      state.lastStreamedText = null;
+      addMessage("assistant", msg.text);
       break;
     case "TOOL_USE":
       addToolMessage(msg.tool, msg.input, msg.turn);
@@ -394,15 +426,22 @@ function finalizeStreamingMessage(id) {
     cancelAnimationFrame(state.streaming.rafHandle);
     state.streaming.rafHandle = 0;
   }
-  if (state.streaming.text.length === 0) {
+  const finalText = state.streaming.text;
+  if (finalText.length === 0) {
     // Empty stream (assistant turn was entirely tool calls, or the call
-    // aborted before any text arrived). Drop the placeholder.
+    // aborted before any text arrived). Drop the placeholder. Also clear
+    // lastStreamedText so the trailing ASSISTANT_TEXT (if any) renders.
     state.streaming.el.remove();
+    state.lastStreamedText = null;
   } else {
     // Render once more so the message reflects the full accumulated text
     // even if the last rAF didn't fire.
-    renderMdInto(state.streaming.el, state.streaming.text);
+    renderMdInto(state.streaming.el, finalText);
     state.streaming.el.classList.remove("streaming");
+    // Background emits ASSISTANT_TEXT after STREAM_END as the canonical
+    // end-of-turn marker. The text is identical to the streamed content —
+    // suppress that exact duplicate (and only that one) below.
+    state.lastStreamedText = finalText;
   }
   state.streaming = null;
 }

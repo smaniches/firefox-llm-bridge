@@ -6,6 +6,71 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-11
+
+### Fixed — caught by second-pass audit
+
+- **CRITICAL: assistant messages were rendering twice.** Background
+  emits `STREAM_END` then a trailing `ASSISTANT_TEXT` carrying the
+  same final text. The sidebar's suppression logic only filtered
+  ASSISTANT_TEXT _during_ the stream; once `state.streaming` cleared
+  on STREAM_END, the trailing message produced a second bubble.
+  Fixed by tracking `state.lastStreamedText` on finalize and
+  suppressing the first matching ASSISTANT_TEXT only. New tests cover
+  the duplicate-suppression, only-first-match, and empty-stream-then-fallback cases.
+- **Sidebar port disconnect leaked streaming state.** A
+  service-worker restart mid-stream left `state.streaming` non-null
+  forever; reconnect kept painting into a stale element. The
+  `onDisconnect` handler now cancels the rAF, drops the streaming
+  class, and clears `state.streaming` / `state.pendingPreviewId` /
+  `state.lastStreamedText`.
+- **`contextMenus.create` was non-idempotent.** On every background
+  service-worker restart, the second call threw "duplicate id". Now
+  wrapped in `try/catch` plus a callback that touches
+  `runtime.lastError` so the runtime stops logging the duplicate.
+  New test re-imports the module with the API rigged to throw and
+  asserts the rest of the init still runs.
+- **Pricing math used `| 0` (32-bit truncation).** A multi-billion
+  token session would wrap into negatives. Replaced with
+  `Math.trunc(Number(...))` plus `Number.isFinite` so values past
+  2³¹ are preserved and `NaN`/`Infinity`/`"garbage"` clamp to zero.
+  New tests cover Infinity, NaN, strings, fractions, and 3 billion
+  tokens.
+- **Persisted session blew through storage quota with vision turns.**
+  Each `screenshot_for_vision` push added a multi-MB base64 image to
+  `conversationHistory`, then `persistSession` wrote the whole
+  thing to `browser.storage.local` (10 MB quota). Now
+  `persistableHistory()` projects to a slim text-only form before
+  write. Live in-memory history still has images for vision-aware
+  turns.
+
+### Added — privacy-posture guardrails
+
+- **`tests/privacy-regression.test.js`** — automated assertions for
+  every promise the README makes:
+  - No `sendBeacon`, no `new Image()` tracking pixel, no analytics
+    SDK references (gtag, dataLayer, amplitude, mixpanel, sentry,
+    datadog, google-analytics.com, segment.io) anywhere in shipped
+    code.
+  - Every literal `fetch("…")` URL is either a known provider host or
+    a relative path under a `${…}` runtime variable (which the CSP
+    further constrains at runtime).
+  - No `eval`, `new Function`, or remote `import()` in shipped code.
+  - Manifest CSP `connect-src` rejects wildcards and lists exactly
+    the allowed provider hosts.
+  - Manifest does **not** request `webRequest`, `nativeMessaging`,
+    `cookies`, `clipboardRead`, `clipboardWrite`, `history`,
+    `bookmarks`, `management`, `proxy`, `unlimitedStorage`, or
+    `tabHide`.
+    These tests gate every PR — drift toward telemetry is impossible
+    without breaking them.
+
+### Quality
+
+- 600+ tests, **100% coverage** still on lines / branches / functions /
+  statements across every file.
+- `npm run lint:webext` continues to report 0 errors / 0 warnings.
+
 ## [0.5.1] - 2026-05-11
 
 ### Fixed — bugs surfaced by self-audit of v0.5.0
@@ -296,7 +361,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `data_collection_permissions` declared in manifest per Firefox November 2025 requirement
 - Explicit `content_security_policy` to permit `http://localhost` for Ollama (works around the MV3 default that upgrades HTTP to HTTPS)
 
-[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.0...v0.4.1
