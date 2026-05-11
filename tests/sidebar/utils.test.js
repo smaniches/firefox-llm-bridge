@@ -1,11 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  TOOL_ICONS,
-  escapeHtml,
-  renderMd,
-  summarize,
-  safeHostname,
-} from "../../sidebar/utils.js";
+import { TOOL_ICONS, escapeHtml, renderMd, summarize, safeHostname } from "../../sidebar/utils.js";
 
 describe("TOOL_ICONS", () => {
   it("covers every tool exposed by the agent", () => {
@@ -60,17 +54,15 @@ describe("renderMd", () => {
   });
 
   it("renders [text](url) for http(s) URLs only", () => {
-    expect(renderMd("[a](https://example.com)")).toContain(
-      'href="https://example.com"',
-    );
+    expect(renderMd("[a](https://example.com)")).toContain('href="https://example.com"');
     // javascript: URI should not be converted (regex requires http/https)
     expect(renderMd("[a](javascript:alert(1))")).not.toContain("<a");
   });
 
   it("link has rel=noopener noreferrer and target=_blank", () => {
     const out = renderMd("[t](https://example.com)");
-    expect(out).toContain("rel=\"noopener noreferrer\"");
-    expect(out).toContain("target=\"_blank\"");
+    expect(out).toContain('rel="noopener noreferrer"');
+    expect(out).toContain('target="_blank"');
   });
 
   it("converts newlines to <br>", () => {
@@ -89,9 +81,7 @@ describe("summarize", () => {
   });
 
   it("navigate shows the hostname", () => {
-    expect(summarize("navigate", { url: "https://example.com/a/b" })).toBe(
-      "→ example.com",
-    );
+    expect(summarize("navigate", { url: "https://example.com/a/b" })).toBe("→ example.com");
   });
 
   it("navigate without URL returns empty", () => {

@@ -11,21 +11,24 @@
 
 import { TOOL_ICONS, escapeHtml, renderMd, summarize } from "./utils.js";
 
-const messagesEl = document.getElementById("messages");
-const inputText = document.getElementById("input-text");
-const btnSend = document.getElementById("btn-send");
-const btnClear = document.getElementById("btn-clear");
-const btnSettings = document.getElementById("btn-settings");
-const btnStop = document.getElementById("btn-stop");
-const stopBar = document.getElementById("stop-bar");
-const statusBar = document.getElementById("status-bar");
-const statusText = document.getElementById("status-text");
-const turnCounter = document.getElementById("turn-counter");
-const providerLabel = document.getElementById("provider-label");
-const noProviderWarning = document.getElementById("no-provider-warning");
-const btnOpenSettings = document.getElementById("btn-open-settings");
-const modeChat = document.getElementById("mode-chat");
-const modeAgent = document.getElementById("mode-agent");
+/** @template T @param {T} x @returns {NonNullable<T>} */
+const must = (x) => /** @type {NonNullable<T>} */ (x);
+
+const messagesEl = must(document.getElementById("messages"));
+const inputText = /** @type {HTMLTextAreaElement} */ (must(document.getElementById("input-text")));
+const btnSend = /** @type {HTMLButtonElement} */ (must(document.getElementById("btn-send")));
+const btnClear = must(document.getElementById("btn-clear"));
+const btnSettings = must(document.getElementById("btn-settings"));
+const btnStop = must(document.getElementById("btn-stop"));
+const stopBar = must(document.getElementById("stop-bar"));
+const statusBar = must(document.getElementById("status-bar"));
+const statusText = must(document.getElementById("status-text"));
+const turnCounter = must(document.getElementById("turn-counter"));
+const providerLabel = must(document.getElementById("provider-label"));
+const noProviderWarning = must(document.getElementById("no-provider-warning"));
+const btnOpenSettings = must(document.getElementById("btn-open-settings"));
+const modeChat = must(document.getElementById("mode-chat"));
+const modeAgent = must(document.getElementById("mode-agent"));
 
 const state = {
   mode: "chat",
@@ -261,7 +264,8 @@ function setMode(next) {
 function bindQuick() {
   document.querySelectorAll(".quick-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      inputText.value = btn.dataset.action;
+      inputText.value =
+        /** @type {HTMLElement} */ (btn).dataset.action ?? /* v8 ignore next */ "";
       setMode("chat");
       sendMessage();
     });

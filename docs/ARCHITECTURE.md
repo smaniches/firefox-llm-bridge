@@ -92,13 +92,13 @@ The internal canonical message format is Anthropic-shaped (richest schema). Othe
 
 ## Trust Boundaries
 
-| Boundary | Trust |
-|----------|-------|
-| User ↔ Extension | User authorizes via Firefox install + AMO review |
-| Extension ↔ Page DOM | Page is untrusted. Content script reads but does not eval. |
-| Extension ↔ Provider API | User-chosen. User's API key authorizes the request. |
-| Extension ↔ Ollama (localhost) | Same-origin guarded by CORS + `OLLAMA_ORIGINS` |
-| Extension ↔ Other extensions | None — no `externally_connectable` |
+| Boundary                       | Trust                                                      |
+| ------------------------------ | ---------------------------------------------------------- |
+| User ↔ Extension               | User authorizes via Firefox install + AMO review           |
+| Extension ↔ Page DOM           | Page is untrusted. Content script reads but does not eval. |
+| Extension ↔ Provider API       | User-chosen. User's API key authorizes the request.        |
+| Extension ↔ Ollama (localhost) | Same-origin guarded by CORS + `OLLAMA_ORIGINS`             |
+| Extension ↔ Other extensions   | None — no `externally_connectable`                         |
 
 See [THREAT_MODEL.md](THREAT_MODEL.md) for the full threat enumeration.
 

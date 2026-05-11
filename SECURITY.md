@@ -7,7 +7,7 @@ We take the security of Firefox LLM Bridge seriously. This document describes ho
 Only the latest minor release receives security updates.
 
 | Version | Supported |
-|---------|-----------|
+| ------- | --------- |
 | 0.2.x   | Yes       |
 | < 0.2   | No        |
 
@@ -38,12 +38,12 @@ Please include:
 
 These are best-effort targets, not contractual SLAs. This is a small open-source project; please plan accordingly.
 
-| Stage | Target (best effort) |
-|-------|---------------------|
-| Initial acknowledgement | within 5 business days |
-| Triage and severity rating | within 10 business days of acknowledgement |
-| Status updates | as material progress is made |
-| Coordinated disclosure window | 90 days, extendable by mutual agreement |
+| Stage                         | Target (best effort)                       |
+| ----------------------------- | ------------------------------------------ |
+| Initial acknowledgement       | within 5 business days                     |
+| Triage and severity rating    | within 10 business days of acknowledgement |
+| Status updates                | as material progress is made               |
+| Coordinated disclosure window | 90 days, extendable by mutual agreement    |
 
 We will tell you up front if we expect to need more time. We will not silently miss a window.
 

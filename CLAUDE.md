@@ -29,6 +29,7 @@ Multi-model support via provider abstraction. Each provider normalizes to a unif
 ```
 
 Supported providers:
+
 - **Ollama** (local, free): http://localhost:11434/v1/chat/completions (OpenAI-compatible)
 - **Anthropic** (cloud, BYOK): https://api.anthropic.com/v1/messages
 - **OpenAI** (cloud, BYOK): https://api.openai.com/v1/chat/completions

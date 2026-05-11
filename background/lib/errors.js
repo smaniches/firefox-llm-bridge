@@ -45,10 +45,12 @@ export class ProviderError extends BridgeError {
 /** The remote authentication was rejected (401/403). */
 export class AuthError extends ProviderError {
   constructor(providerId, status, body = "") {
-    super(
-      `${providerId} rejected the API key (HTTP ${status}). Check the key in Settings.`,
-      { providerId, status, body, retryable: false },
-    );
+    super(`${providerId} rejected the API key (HTTP ${status}). Check the key in Settings.`, {
+      providerId,
+      status,
+      body,
+      retryable: false,
+    });
     this.name = "AuthError";
     this.code = "AUTH_REJECTED";
   }
@@ -113,10 +115,12 @@ export function fromHttpStatus(providerId, status, body, headers) {
     return new RateLimitError(providerId, retryAfterSeconds);
   }
   const retryable = status >= 500 && status < 600;
-  return new ProviderError(
-    `${providerId} API ${status}: ${body.substring(0, 200)}`,
-    { providerId, status, body, retryable },
-  );
+  return new ProviderError(`${providerId} API ${status}: ${body.substring(0, 200)}`, {
+    providerId,
+    status,
+    body,
+    retryable,
+  });
 }
 
 /**

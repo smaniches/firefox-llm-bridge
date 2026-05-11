@@ -29,17 +29,17 @@ The `package.json` contains development dependencies only (Vitest, web-ext, ESLi
 
 ## Permissions Justification
 
-| Permission | Why it is required |
-|------------|--------------------|
-| `activeTab` | Read the currently active page when the user invokes the agent (the sole entry point for any page interaction). |
-| `tabs` | Read tab URL/title (`get_tab_info` tool), navigate (`navigate` tool, `go_back` tool), and message the content script. |
-| `scripting` | Inject the content script declaratively at document_idle. Required for the accessibility-tree sensor. |
-| `storage` | Persist the user's chosen provider, model selection, API key (encrypted at the OS level by Firefox's profile storage), and `maxTurns` setting. |
-| `contextMenus` | Add the right-click "Ask LLM Bridge about selection" entry to invoke the chat mode on highlighted text. |
-| `notifications` | Reserved for future use (e.g., agent completion when the user is on another tab). Currently no `browser.notifications.*` calls in code. |
-| `webNavigation` | Used in `executeTool("navigate")` to await `onCompleted` and avoid racing the next agent action against the page load. |
-| `<all_urls>` host permission | The agent is general-purpose; it must be able to operate on any page the user invokes it on. |
-| `http://localhost/*`, `http://127.0.0.1/*`, `http://[::1]/*` | Talk to the user's local Ollama server on either IPv4 or IPv6 loopback. |
+| Permission                                                   | Why it is required                                                                                                                             |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `activeTab`                                                  | Read the currently active page when the user invokes the agent (the sole entry point for any page interaction).                                |
+| `tabs`                                                       | Read tab URL/title (`get_tab_info` tool), navigate (`navigate` tool, `go_back` tool), and message the content script.                          |
+| `scripting`                                                  | Inject the content script declaratively at document_idle. Required for the accessibility-tree sensor.                                          |
+| `storage`                                                    | Persist the user's chosen provider, model selection, API key (encrypted at the OS level by Firefox's profile storage), and `maxTurns` setting. |
+| `contextMenus`                                               | Add the right-click "Ask LLM Bridge about selection" entry to invoke the chat mode on highlighted text.                                        |
+| `notifications`                                              | Reserved for future use (e.g., agent completion when the user is on another tab). Currently no `browser.notifications.*` calls in code.        |
+| `webNavigation`                                              | Used in `executeTool("navigate")` to await `onCompleted` and avoid racing the next agent action against the page load.                         |
+| `<all_urls>` host permission                                 | The agent is general-purpose; it must be able to operate on any page the user invokes it on.                                                   |
+| `http://localhost/*`, `http://127.0.0.1/*`, `http://[::1]/*` | Talk to the user's local Ollama server on either IPv4 or IPv6 loopback.                                                                        |
 
 `webRequest`, `nativeMessaging`, `cookies`, `clipboardRead`, `clipboardWrite`, `downloads`, `history`, `bookmarks`, `proxy`, `management`, `tabHide`, `unlimitedStorage` are **not** requested.
 

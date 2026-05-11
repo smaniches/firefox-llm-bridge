@@ -17,22 +17,12 @@ const webExtGlobals = {
 
 export default [
   {
-    ignores: [
-      "node_modules/**",
-      "coverage/**",
-      "dist/**",
-      "web-ext-artifacts/**",
-    ],
+    ignores: ["node_modules/**", "coverage/**", "dist/**", "web-ext-artifacts/**"],
   },
 
   // Extension source code
   {
-    files: [
-      "background/**/*.js",
-      "content/**/*.js",
-      "sidebar/**/*.js",
-      "options/**/*.js",
-    ],
+    files: ["background/**/*.js", "content/**/*.js", "sidebar/**/*.js", "options/**/*.js"],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: "module",
@@ -81,12 +71,7 @@ export default [
 
   // Build/config files (node context)
   {
-    files: [
-      "*.config.js",
-      "*.config.mjs",
-      "eslint.config.js",
-      "vitest.config.js",
-    ],
+    files: ["*.config.js", "*.config.mjs", "eslint.config.js", "vitest.config.js"],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: "module",

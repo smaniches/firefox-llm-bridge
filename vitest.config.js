@@ -15,12 +15,7 @@ export default defineConfig({
         "sidebar/sidebar.js",
         "options/options.js",
       ],
-      exclude: [
-        "tests/**",
-        "**/*.test.js",
-        "**/*.config.js",
-        "node_modules/**",
-      ],
+      exclude: ["tests/**", "**/*.test.js", "**/*.config.js", "node_modules/**"],
       thresholds: {
         lines: 100,
         functions: 100,

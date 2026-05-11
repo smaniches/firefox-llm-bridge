@@ -12,22 +12,17 @@
  *  - Request body shaping — caller passes a fully-formed init
  */
 
-import {
-  NetworkError,
-  TimeoutError,
-  RateLimitError,
-  fromHttpStatus,
-} from "./errors.js";
+import { NetworkError, TimeoutError, RateLimitError, fromHttpStatus } from "./errors.js";
 
 /** Default per-request timeout, in ms. */
 export const DEFAULT_TIMEOUT_MS = 60_000;
 
 /** Default retry policy. */
 export const DEFAULT_RETRY = Object.freeze({
-  maxAttempts: 3,            // total attempts including the first
+  maxAttempts: 3, // total attempts including the first
   baseDelayMs: 500,
   maxDelayMs: 8_000,
-  jitterRatio: 0.25,         // ±25% jitter on each delay
+  jitterRatio: 0.25, // ±25% jitter on each delay
 });
 
 /**
@@ -175,9 +170,7 @@ function isHttpError(e) {
     e &&
     typeof e === "object" &&
     typeof e.code === "string" &&
-    (e.code.startsWith("PROVIDER_") ||
-      e.code === "AUTH_REJECTED" ||
-      e.code === "RATE_LIMITED")
+    (e.code.startsWith("PROVIDER_") || e.code === "AUTH_REJECTED" || e.code === "RATE_LIMITED")
   );
 }
 

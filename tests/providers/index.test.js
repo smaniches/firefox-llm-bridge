@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   listProviders,
   getProvider,
@@ -101,7 +101,9 @@ describe("provider router (index.js)", () => {
       // Stub global fetch on the anthropic endpoint
       globalThis.fetch.mockResolvedValueOnce({
         ok: true,
-        json: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "x" }], stop_reason: "end_turn" }),
+        json: vi
+          .fn()
+          .mockResolvedValue({ content: [{ type: "text", text: "x" }], stop_reason: "end_turn" }),
         text: vi.fn().mockResolvedValue(""),
         status: 200,
       });
@@ -116,7 +118,9 @@ describe("provider router (index.js)", () => {
       });
       globalThis.fetch.mockResolvedValueOnce({
         ok: true,
-        json: vi.fn().mockResolvedValue({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }] }),
+        json: vi
+          .fn()
+          .mockResolvedValue({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }] }),
         text: vi.fn().mockResolvedValue(""),
         status: 200,
       });
@@ -139,7 +143,9 @@ describe("provider router (index.js)", () => {
         activeProvider: "google",
         providers: { google: { key: "AIzaXX" } },
       });
-      const msg = await buildToolResultMessage([{ tool_use_id: "id", toolName: "click", content: "ok" }]);
+      const msg = await buildToolResultMessage([
+        { tool_use_id: "id", toolName: "click", content: "ok" },
+      ]);
       // Google preserves _toolName on the result block
       expect(msg.content[0]._toolName).toBe("click");
     });

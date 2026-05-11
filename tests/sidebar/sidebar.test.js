@@ -10,10 +10,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const SIDEBAR_HTML = readFileSync(
-  join(__dirname, "..", "..", "sidebar", "sidebar.html"),
-  "utf8",
-);
+const SIDEBAR_HTML = readFileSync(join(__dirname, "..", "..", "sidebar", "sidebar.html"), "utf8");
 
 let port;
 let handleMsg;
@@ -88,12 +85,8 @@ describe("sidebar: STATUS handling", () => {
   it("shows 'Not configured' when no provider", async () => {
     await setup();
     handleMsg({ type: "STATUS", status: "idle", hasProvider: false });
-    expect(document.getElementById("provider-label").textContent).toBe(
-      "Not configured",
-    );
-    expect(
-      document.getElementById("no-provider-warning").classList.contains("hidden"),
-    ).toBe(false);
+    expect(document.getElementById("provider-label").textContent).toBe("Not configured");
+    expect(document.getElementById("no-provider-warning").classList.contains("hidden")).toBe(false);
   });
 
   it("shows the model name when configured", async () => {
@@ -104,9 +97,7 @@ describe("sidebar: STATUS handling", () => {
       hasProvider: true,
       modelName: "Claude Sonnet 4",
     });
-    expect(document.getElementById("provider-label").textContent).toBe(
-      "Claude Sonnet 4",
-    );
+    expect(document.getElementById("provider-label").textContent).toBe("Claude Sonnet 4");
   });
 
   it("falls back to provider name when modelName missing", async () => {
@@ -136,17 +127,13 @@ describe("sidebar: STATUS handling", () => {
   it("thinking with no message uses default text", async () => {
     await setup();
     handleMsg({ type: "STATUS", status: "thinking" });
-    expect(document.getElementById("status-text").textContent).toBe(
-      "Thinking...",
-    );
+    expect(document.getElementById("status-text").textContent).toBe("Thinking...");
   });
 
   it("running with no message uses default text", async () => {
     await setup();
     handleMsg({ type: "STATUS", status: "running" });
-    expect(document.getElementById("status-text").textContent).toBe(
-      "Executing...",
-    );
+    expect(document.getElementById("status-text").textContent).toBe("Executing...");
   });
 
   it("error with no message uses default text", async () => {
@@ -160,9 +147,7 @@ describe("sidebar: message rendering", () => {
   it("renders ASSISTANT_TEXT with Markdown support", async () => {
     await setup();
     handleMsg({ type: "ASSISTANT_TEXT", text: "**bold**" });
-    expect(
-      document.querySelector(".msg-assistant").innerHTML,
-    ).toContain("<strong>bold</strong>");
+    expect(document.querySelector(".msg-assistant").innerHTML).toContain("<strong>bold</strong>");
   });
 
   it("renders TOOL_USE entry with icon/name/summary", async () => {
@@ -184,9 +169,7 @@ describe("sidebar: message rendering", () => {
     await setup();
     handleMsg({ type: "TOOL_USE", tool: "click_element", input: {}, turn: 1 });
     handleMsg({ type: "TOOL_RESULT", success: true });
-    expect(document.querySelector(".msg-tool").classList.contains("success")).toBe(
-      true,
-    );
+    expect(document.querySelector(".msg-tool").classList.contains("success")).toBe(true);
     handleMsg({ type: "TOOL_USE", tool: "navigate", input: {}, turn: 2 });
     handleMsg({ type: "TOOL_RESULT", success: false });
     const tools = document.querySelectorAll(".msg-tool");
@@ -215,21 +198,15 @@ describe("sidebar: message rendering", () => {
   it("renders ERROR and reveals the no-provider warning for that error class", async () => {
     await setup();
     handleMsg({ type: "ERROR", message: "No LLM provider configured." });
-    expect(
-      document.getElementById("no-provider-warning").classList.contains("hidden"),
-    ).toBe(false);
-    expect(document.querySelector(".msg-error").textContent).toContain(
-      "No LLM provider",
-    );
+    expect(document.getElementById("no-provider-warning").classList.contains("hidden")).toBe(false);
+    expect(document.querySelector(".msg-error").textContent).toContain("No LLM provider");
   });
 
   it("renders ERROR without unhiding the warning for other messages", async () => {
     await setup();
     document.getElementById("no-provider-warning").classList.add("hidden");
     handleMsg({ type: "ERROR", message: "Generic failure" });
-    expect(
-      document.getElementById("no-provider-warning").classList.contains("hidden"),
-    ).toBe(true);
+    expect(document.getElementById("no-provider-warning").classList.contains("hidden")).toBe(true);
   });
 
   it("HISTORY_CLEARED resets the welcome panel", async () => {
@@ -287,7 +264,11 @@ describe("sidebar: send + mode toggle", () => {
     await setup();
     const input = document.getElementById("input-text");
     input.value = "test";
-    const enterEvt = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    const enterEvt = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
     input.dispatchEvent(enterEvt);
     expect(port.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: "CHAT_ONLY", text: "test" }),

@@ -74,17 +74,17 @@ The extension developer is not a data processor for these flows. You contract di
 
 ## Permissions Explained
 
-| Permission | Why |
-|------------|-----|
-| `activeTab` | Read the page you're currently viewing when you invoke the agent |
-| `tabs` | Navigate the active tab (back, forward, URL changes) for agent actions |
-| `scripting` | Inject the content script that builds the accessibility map |
-| `storage` | Save your API key and settings locally |
-| `contextMenus` | Add the right-click "Ask about selection" entry |
-| `notifications` | Reserved for future use; currently inactive |
-| `webNavigation` | Detect when navigation finishes after a `navigate` action |
-| `<all_urls>` host permission | The agent can be invoked on any page you visit |
-| `http://localhost/*` host permission | Talk to your local Ollama server |
+| Permission                           | Why                                                                    |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `activeTab`                          | Read the page you're currently viewing when you invoke the agent       |
+| `tabs`                               | Navigate the active tab (back, forward, URL changes) for agent actions |
+| `scripting`                          | Inject the content script that builds the accessibility map            |
+| `storage`                            | Save your API key and settings locally                                 |
+| `contextMenus`                       | Add the right-click "Ask about selection" entry                        |
+| `notifications`                      | Reserved for future use; currently inactive                            |
+| `webNavigation`                      | Detect when navigation finishes after a `navigate` action              |
+| `<all_urls>` host permission         | The agent can be invoked on any page you visit                         |
+| `http://localhost/*` host permission | Talk to your local Ollama server                                       |
 
 The extension does **not** request `webRequest` or `nativeMessaging`.
 

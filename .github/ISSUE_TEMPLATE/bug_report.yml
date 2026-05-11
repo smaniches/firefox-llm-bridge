@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a defect in Firefox LLM Bridge
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug report. Please fill in as much as you can; "I don't know" is a valid answer.
+        For security vulnerabilities, **do not** open a public issue — see [SECURITY.md](../../SECURITY.md).
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      description: From `about:addons` → Firefox LLM Bridge → "More options" → version line. Or `git rev-parse --short HEAD` if running from source.
+      placeholder: "0.2.0 / commit abc1234"
+    validations:
+      required: true
+  - type: input
+    id: firefox-version
+    attributes:
+      label: Firefox version
+      description: From `about:support`
+      placeholder: "Firefox 128.0 Linux"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider in use
+      options:
+        - Ollama (local)
+        - Anthropic Claude
+        - OpenAI
+        - Google Gemini
+        - Not applicable
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      placeholder: "claude-sonnet-4-20250514"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps; include the URL you were on if relevant.
+      placeholder: |
+        1. Open https://example.com
+        2. Click the sidebar icon
+        3. Type "summarise this page"
+        4. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: console-output
+    attributes:
+      label: Console output
+      description: Open `about:debugging#/runtime/this-firefox` → Inspect on the extension → Console tab. Paste any errors.
+      render: shell
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues for duplicates
+          required: true
+        - label: This is not a security vulnerability (those go to security@topologica.app)
+          required: true

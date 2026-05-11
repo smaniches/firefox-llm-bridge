@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { anthropic } from "../../background/providers/anthropic.js";
 import { fetchResponse } from "../setup.js";
 
@@ -61,7 +61,10 @@ describe("anthropic provider", () => {
         { role: "user", content: "hello" },
         {
           role: "assistant",
-          content: [{ type: "text", text: "hi" }, { type: "tool_use", id: "1", name: "x", input: {} }],
+          content: [
+            { type: "text", text: "hi" },
+            { type: "tool_use", id: "1", name: "x", input: {} },
+          ],
         },
       ];
       expect(anthropic.formatMessages(messages)).toBe(messages);
@@ -77,7 +80,14 @@ describe("anthropic provider", () => {
         }),
       );
 
-      const res = await anthropic.call("sk-ant-key", "claude-sonnet-4-20250514", "sys", [{ role: "user", content: "hi" }], [], null);
+      const res = await anthropic.call(
+        "sk-ant-key",
+        "claude-sonnet-4-20250514",
+        "sys",
+        [{ role: "user", content: "hi" }],
+        [],
+        null,
+      );
 
       expect(globalThis.fetch).toHaveBeenCalledOnce();
       const [url, init] = globalThis.fetch.mock.calls[0];
@@ -120,13 +130,15 @@ describe("anthropic provider", () => {
         fetchResponse("invalid api key", { ok: false, status: 401 }),
       );
 
-      await expect(
-        anthropic.call("bad", "m", "s", [], [], null),
-      ).rejects.toThrow(/Anthropic API 401/);
+      await expect(anthropic.call("bad", "m", "s", [], [], null)).rejects.toThrow(
+        /Anthropic API 401/,
+      );
     });
 
     it("propagates abort signal", async () => {
-      globalThis.fetch.mockResolvedValueOnce(fetchResponse({ content: [], stop_reason: "end_turn" }));
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse({ content: [], stop_reason: "end_turn" }),
+      );
       const controller = new AbortController();
       await anthropic.call("k", "m", "s", [], [], controller.signal);
       expect(globalThis.fetch.mock.calls[0][1].signal).toBe(controller.signal);

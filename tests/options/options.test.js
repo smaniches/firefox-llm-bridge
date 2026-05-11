@@ -10,10 +10,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fetchResponse } from "../setup.js";
 
-const OPTIONS_HTML = readFileSync(
-  join(__dirname, "..", "..", "options", "options.html"),
-  "utf8",
-);
+const OPTIONS_HTML = readFileSync(join(__dirname, "..", "..", "options", "options.html"), "utf8");
 
 function extractBody(html) {
   const m = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
@@ -42,7 +39,9 @@ beforeEach(() => {
 
 describe("options: load + restore saved settings", () => {
   it("populates all input fields from storage", async () => {
-    globalThis.fetch.mockResolvedValueOnce(fetchResponse({ models: [{ name: "llama3.1", size: 1024 * 1024 * 1024 }] }));
+    globalThis.fetch.mockResolvedValueOnce(
+      fetchResponse({ models: [{ name: "llama3.1", size: 1024 * 1024 * 1024 }] }),
+    );
     await setup({
       activeProvider: "anthropic",
       providers: {
@@ -71,9 +70,7 @@ describe("options: load + restore saved settings", () => {
     );
     await setup();
     expect(globalThis.fetch).toHaveBeenCalled();
-    expect(
-      globalThis.fetch.mock.calls.some((c) => /api\/tags$/.test(c[0])),
-    ).toBe(true);
+    expect(globalThis.fetch.mock.calls.some((c) => /api\/tags$/.test(c[0]))).toBe(true);
   });
 });
 
@@ -82,16 +79,14 @@ describe("options: provider card selection", () => {
     globalThis.fetch.mockResolvedValue(fetchResponse({ models: [] }));
     await setup();
     document.querySelector('.provider-card[data-provider="anthropic"]').click();
-    expect(
-      document.getElementById("config-anthropic").classList.contains("visible"),
-    ).toBe(true);
-    expect(
-      document.getElementById("config-openai").classList.contains("visible"),
-    ).toBe(false);
+    expect(document.getElementById("config-anthropic").classList.contains("visible")).toBe(true);
+    expect(document.getElementById("config-openai").classList.contains("visible")).toBe(false);
   });
 
   it("clicking Ollama card re-detects models", async () => {
-    globalThis.fetch.mockResolvedValue(fetchResponse({ models: [{ name: "x", size: 1024 * 1024 * 1024 }] }));
+    globalThis.fetch.mockResolvedValue(
+      fetchResponse({ models: [{ name: "x", size: 1024 * 1024 * 1024 }] }),
+    );
     await setup();
     const before = globalThis.fetch.mock.calls.length;
     document.querySelector('.provider-card[data-provider="ollama"]').click();
@@ -102,7 +97,9 @@ describe("options: provider card selection", () => {
 
 describe("options: Ollama configuration", () => {
   it("Test button shows Connected on 200", async () => {
-    globalThis.fetch.mockResolvedValue(fetchResponse({ models: [{ name: "m", size: 1024 * 1024 * 1024 }] }));
+    globalThis.fetch.mockResolvedValue(
+      fetchResponse({ models: [{ name: "m", size: 1024 * 1024 * 1024 }] }),
+    );
     await setup();
     document.getElementById("ollama-test").click();
     await new Promise((r) => setTimeout(r, 10));
@@ -126,7 +123,9 @@ describe("options: Ollama configuration", () => {
   });
 
   it("Save with a selected model writes to storage", async () => {
-    globalThis.fetch.mockResolvedValue(fetchResponse({ models: [{ name: "llama3.1", size: 1024 * 1024 * 1024 }] }));
+    globalThis.fetch.mockResolvedValue(
+      fetchResponse({ models: [{ name: "llama3.1", size: 1024 * 1024 * 1024 }] }),
+    );
     await setup();
     await new Promise((r) => setTimeout(r, 10));
     document.getElementById("ollama-model").value = "llama3.1";
@@ -207,7 +206,9 @@ describe("options: Anthropic configuration", () => {
   it("Test success path", async () => {
     await setup();
     document.getElementById("anthropic-key").value = "sk-ant-xxx";
-    globalThis.fetch.mockResolvedValueOnce(fetchResponse({ content: [{ type: "text", text: "OK" }] }));
+    globalThis.fetch.mockResolvedValueOnce(
+      fetchResponse({ content: [{ type: "text", text: "OK" }] }),
+    );
     document.getElementById("anthropic-test").click();
     await new Promise((r) => setTimeout(r, 5));
     expect(document.getElementById("anthropic-status").textContent).toMatch(/Connected/);

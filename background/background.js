@@ -20,33 +20,72 @@ const state = {
 const BROWSER_TOOLS = [
   {
     name: "read_page",
-    description: "Read the current page's semantic structure. Returns an accessibility-tree representation of all interactive elements with roles, labels, bounding boxes, and stable identifiers.",
-    input_schema: { type: "object", properties: { include_text: { type: "boolean", description: "Include full text content. Default false." } }, required: [] },
+    description:
+      "Read the current page's semantic structure. Returns an accessibility-tree representation of all interactive elements with roles, labels, bounding boxes, and stable identifiers.",
+    input_schema: {
+      type: "object",
+      properties: {
+        include_text: { type: "boolean", description: "Include full text content. Default false." },
+      },
+      required: [],
+    },
   },
   {
     name: "click_element",
     description: "Click on an element by CSS selector or element index from read_page.",
-    input_schema: { type: "object", properties: { selector: { type: "string", description: "CSS selector or #id." }, element_index: { type: "integer", description: "Index from read_page." } }, required: [] },
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "CSS selector or #id." },
+        element_index: { type: "integer", description: "Index from read_page." },
+      },
+      required: [],
+    },
   },
   {
     name: "type_text",
     description: "Type text into an input field.",
-    input_schema: { type: "object", properties: { selector: { type: "string" }, element_index: { type: "integer" }, text: { type: "string", description: "Text to type." }, clear_first: { type: "boolean", description: "Clear first. Default true." }, press_enter: { type: "boolean", description: "Press Enter after. Default false." } }, required: ["text"] },
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: { type: "string" },
+        element_index: { type: "integer" },
+        text: { type: "string", description: "Text to type." },
+        clear_first: { type: "boolean", description: "Clear first. Default true." },
+        press_enter: { type: "boolean", description: "Press Enter after. Default false." },
+      },
+      required: ["text"],
+    },
   },
   {
     name: "navigate",
     description: "Navigate the current tab to a URL.",
-    input_schema: { type: "object", properties: { url: { type: "string", description: "URL to navigate to." } }, required: ["url"] },
+    input_schema: {
+      type: "object",
+      properties: { url: { type: "string", description: "URL to navigate to." } },
+      required: ["url"],
+    },
   },
   {
     name: "scroll_page",
     description: "Scroll the page.",
-    input_schema: { type: "object", properties: { direction: { type: "string", enum: ["up", "down", "top", "bottom"] }, amount: { type: "integer", description: "Pixels. Default 600." } }, required: ["direction"] },
+    input_schema: {
+      type: "object",
+      properties: {
+        direction: { type: "string", enum: ["up", "down", "top", "bottom"] },
+        amount: { type: "integer", description: "Pixels. Default 600." },
+      },
+      required: ["direction"],
+    },
   },
   {
     name: "extract_text",
     description: "Extract visible text from the page or a specific element.",
-    input_schema: { type: "object", properties: { selector: { type: "string", description: "Optional CSS selector." } }, required: [] },
+    input_schema: {
+      type: "object",
+      properties: { selector: { type: "string", description: "Optional CSS selector." } },
+      required: [],
+    },
   },
   {
     name: "screenshot",
@@ -56,7 +95,11 @@ const BROWSER_TOOLS = [
   {
     name: "wait",
     description: "Wait before the next action.",
-    input_schema: { type: "object", properties: { milliseconds: { type: "integer", description: "Default 1000." } }, required: [] },
+    input_schema: {
+      type: "object",
+      properties: { milliseconds: { type: "integer", description: "Default 1000." } },
+      required: [],
+    },
   },
   {
     name: "go_back",
@@ -71,7 +114,11 @@ const BROWSER_TOOLS = [
   {
     name: "task_complete",
     description: "Signal the task is complete.",
-    input_schema: { type: "object", properties: { summary: { type: "string", description: "Summary of what was accomplished." } }, required: ["summary"] },
+    input_schema: {
+      type: "object",
+      properties: { summary: { type: "string", description: "Summary of what was accomplished." } },
+      required: ["summary"],
+    },
   },
 ];
 
@@ -102,35 +149,66 @@ async function executeTool(toolName, toolInput) {
   try {
     switch (toolName) {
       case "read_page":
-        return await browser.tabs.sendMessage(tabId, { type: "SENSOR_READ", includeText: toolInput.include_text || false });
+        return await browser.tabs.sendMessage(tabId, {
+          type: "SENSOR_READ",
+          includeText: toolInput.include_text || false,
+        });
       case "click_element": {
-        const r = await browser.tabs.sendMessage(tabId, { type: "ACTION_CLICK", selector: toolInput.selector || null, elementIndex: toolInput.element_index ?? null });
+        const r = await browser.tabs.sendMessage(tabId, {
+          type: "ACTION_CLICK",
+          selector: toolInput.selector || null,
+          elementIndex: toolInput.element_index ?? null,
+        });
         await sleep(300);
         return r;
       }
       case "type_text": {
-        const r = await browser.tabs.sendMessage(tabId, { type: "ACTION_TYPE", selector: toolInput.selector || null, elementIndex: toolInput.element_index ?? null, text: toolInput.text, clearFirst: toolInput.clear_first !== false, pressEnter: toolInput.press_enter || false });
+        const r = await browser.tabs.sendMessage(tabId, {
+          type: "ACTION_TYPE",
+          selector: toolInput.selector || null,
+          elementIndex: toolInput.element_index ?? null,
+          text: toolInput.text,
+          clearFirst: toolInput.clear_first !== false,
+          pressEnter: toolInput.press_enter || false,
+        });
         await sleep(200);
         return r;
       }
       case "navigate":
         await browser.tabs.update(tabId, { url: toolInput.url });
         await new Promise((resolve) => {
-          const fn = (d) => { if (d.tabId === tabId && d.frameId === 0) { browser.webNavigation.onCompleted.removeListener(fn); resolve(); } };
+          const fn = (d) => {
+            if (d.tabId === tabId && d.frameId === 0) {
+              browser.webNavigation.onCompleted.removeListener(fn);
+              resolve();
+            }
+          };
           browser.webNavigation.onCompleted.addListener(fn);
-          setTimeout(() => { browser.webNavigation.onCompleted.removeListener(fn); resolve(); }, 15000);
+          setTimeout(() => {
+            browser.webNavigation.onCompleted.removeListener(fn);
+            resolve();
+          }, 15000);
         });
         await sleep(500);
         return { success: true, url: toolInput.url };
       case "scroll_page": {
-        const r = await browser.tabs.sendMessage(tabId, { type: "ACTION_SCROLL", direction: toolInput.direction, amount: toolInput.amount || 600 });
+        const r = await browser.tabs.sendMessage(tabId, {
+          type: "ACTION_SCROLL",
+          direction: toolInput.direction,
+          amount: toolInput.amount || 600,
+        });
         await sleep(300);
         return r;
       }
       case "extract_text":
-        return await browser.tabs.sendMessage(tabId, { type: "SENSOR_EXTRACT_TEXT", selector: toolInput.selector || null });
+        return await browser.tabs.sendMessage(tabId, {
+          type: "SENSOR_EXTRACT_TEXT",
+          selector: toolInput.selector || null,
+        });
       case "screenshot":
-        return { image: await browser.tabs.captureVisibleTab(null, { format: "png", quality: 85 }) };
+        return {
+          image: await browser.tabs.captureVisibleTab(null, { format: "png", quality: 85 }),
+        };
       case "wait":
         await sleep(toolInput.milliseconds || 1000);
         return { success: true };
@@ -152,7 +230,9 @@ async function executeTool(toolName, toolInput) {
   }
 }
 
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 // ============================================================
 // AGENT LOOP
@@ -169,21 +249,36 @@ async function runAgentLoop(userMessage, port) {
   state.conversationHistory.push({ role: "user", content: userMessage });
 
   const info = await getActiveProviderInfo();
-  send(port, { type: "STATUS", status: "thinking", message: info ? `${info.modelName}...` : "Processing..." });
+  send(port, {
+    type: "STATUS",
+    status: "thinking",
+    message: info ? `${info.modelName}...` : "Processing...",
+  });
 
   try {
     let loop = true;
     while (loop && state.turnCount < state.maxTurns) {
-      if (state.abortController.signal.aborted) { send(port, { type: "AGENT_STOPPED", message: "Stopped." }); break; }
+      if (state.abortController.signal.aborted) {
+        send(port, { type: "AGENT_STOPPED", message: "Stopped." });
+        break;
+      }
 
-      const response = await callLLM(SYSTEM_PROMPT, state.conversationHistory, BROWSER_TOOLS, state.abortController.signal);
+      const response = await callLLM(
+        SYSTEM_PROMPT,
+        state.conversationHistory,
+        BROWSER_TOOLS,
+        state.abortController.signal,
+      );
       state.conversationHistory.push({ role: "assistant", content: response.content });
 
       for (const b of response.content) {
         if (b.type === "text" && b.text) send(port, { type: "ASSISTANT_TEXT", text: b.text });
       }
 
-      if (response.stop_reason !== "tool_use") { loop = false; break; }
+      if (response.stop_reason !== "tool_use") {
+        loop = false;
+        break;
+      }
 
       const results = [];
       for (const b of response.content) {
@@ -199,14 +294,21 @@ async function runAgentLoop(userMessage, port) {
         }
 
         const result = await executeTool(b.name, b.input);
-        if (b.name === "screenshot" && result.image) send(port, { type: "SCREENSHOT", image: result.image });
+        if (b.name === "screenshot" && result.image)
+          send(port, { type: "SCREENSHOT", image: result.image });
 
         let content = JSON.stringify(result);
         if (content.length > 50000) content = content.substring(0, 50000) + "...[truncated]";
-        if (b.name === "screenshot" && result.image) content = "Screenshot captured and displayed to user.";
+        if (b.name === "screenshot" && result.image)
+          content = "Screenshot captured and displayed to user.";
 
         results.push({ tool_use_id: b.id, toolName: b.name, content });
-        send(port, { type: "TOOL_RESULT", tool: b.name, success: !result.error, turn: state.turnCount });
+        send(port, {
+          type: "TOOL_RESULT",
+          tool: b.name,
+          success: !result.error,
+          turn: state.turnCount,
+        });
       }
 
       if (results.length > 0) {
@@ -238,18 +340,38 @@ async function runChatOnly(userMessage, port) {
   let pageContext = "";
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (tab) { state.currentTabId = tab.id; const t = await browser.tabs.sendMessage(tab.id, { type: "SENSOR_EXTRACT_TEXT" }); if (t?.text) pageContext = t.text.substring(0, 8000); }
-  } catch (e) { /* no content script */ }
+    if (tab) {
+      state.currentTabId = tab.id;
+      const t = await browser.tabs.sendMessage(tab.id, { type: "SENSOR_EXTRACT_TEXT" });
+      if (t?.text) pageContext = t.text.substring(0, 8000);
+    }
+  } catch {
+    /* no content script */
+  }
 
-  const msg = pageContext ? `[Page content]\n${pageContext}\n\n[Question]\n${userMessage}` : userMessage;
+  const msg = pageContext
+    ? `[Page content]\n${pageContext}\n\n[Question]\n${userMessage}`
+    : userMessage;
   state.conversationHistory.push({ role: "user", content: msg });
 
   const info = await getActiveProviderInfo();
-  send(port, { type: "STATUS", status: "thinking", message: info ? `${info.modelName}...` : "Thinking..." });
+  send(port, {
+    type: "STATUS",
+    status: "thinking",
+    message: info ? `${info.modelName}...` : "Thinking...",
+  });
 
   try {
-    const r = await callLLM("You are Firefox LLM Bridge. Answer questions about the page or have a general conversation. Be concise.", state.conversationHistory, [], state.abortController.signal);
-    const text = r.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+    const r = await callLLM(
+      "You are Firefox LLM Bridge. Answer questions about the page or have a general conversation. Be concise.",
+      state.conversationHistory,
+      [],
+      state.abortController.signal,
+    );
+    const text = r.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("");
     state.conversationHistory.push({ role: "assistant", content: text });
     send(port, { type: "ASSISTANT_TEXT", text });
   } catch (err) {
@@ -265,7 +387,13 @@ async function runChatOnly(userMessage, port) {
 // SIDEBAR PORT
 // ============================================================
 
-function send(port, msg) { try { port.postMessage(msg); } catch (e) { /* closed */ } }
+function send(port, msg) {
+  try {
+    port.postMessage(msg);
+  } catch {
+    /* closed */
+  }
+}
 
 browser.runtime.onConnect.addListener((port) => {
   // Reject ports that did not originate from this extension's own pages.
@@ -277,7 +405,10 @@ browser.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener(async (msg) => {
     switch (msg.type) {
       case "SEND_MESSAGE":
-        if (state.isAgentRunning) { send(port, { type: "ERROR", message: "Agent running. Stop first." }); return; }
+        if (state.isAgentRunning) {
+          send(port, { type: "ERROR", message: "Agent running. Stop first." });
+          return;
+        }
         await loadSettings();
         runAgentLoop(msg.text, port);
         break;
@@ -291,7 +422,14 @@ browser.runtime.onConnect.addListener((port) => {
         break;
       case "GET_STATUS": {
         const info = await getActiveProviderInfo();
-        send(port, { type: "STATUS", status: state.isAgentRunning ? "running" : "idle", hasProvider: !!info, providerName: info?.name || null, modelName: info?.modelName || null, providerId: info?.id || null });
+        send(port, {
+          type: "STATUS",
+          status: state.isAgentRunning ? "running" : "idle",
+          hasProvider: !!info,
+          providerName: info?.name || null,
+          modelName: info?.modelName || null,
+          providerId: info?.id || null,
+        });
         break;
       }
       case "CHAT_ONLY":
@@ -310,9 +448,16 @@ async function loadSettings() {
 loadSettings();
 browser.storage.onChanged.addListener(() => loadSettings());
 
-browser.contextMenus.create({ id: "bridge-explain", title: "Ask LLM Bridge about selection", contexts: ["selection"] });
+browser.contextMenus.create({
+  id: "bridge-explain",
+  title: "Ask LLM Bridge about selection",
+  contexts: ["selection"],
+});
 browser.contextMenus.onClicked.addListener(async (info) => {
-  if (info.menuItemId === "bridge-explain") { await browser.sidebarAction.open(); await browser.storage.session.set({ pendingSelection: info.selectionText }); }
+  if (info.menuItemId === "bridge-explain") {
+    await browser.sidebarAction.open();
+    await browser.storage.session.set({ pendingSelection: info.selectionText });
+  }
 });
 
 console.info("[Firefox LLM Bridge] Initialized.");

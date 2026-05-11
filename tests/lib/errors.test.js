@@ -28,7 +28,12 @@ describe("error hierarchy", () => {
   });
 
   it("ProviderError carries provider context", () => {
-    const e = new ProviderError("x", { providerId: "openai", status: 503, body: "down", retryable: true });
+    const e = new ProviderError("x", {
+      providerId: "openai",
+      status: 503,
+      body: "down",
+      retryable: true,
+    });
     expect(e instanceof BridgeError).toBe(true);
     expect(e.providerId).toBe("openai");
     expect(e.status).toBe(503);

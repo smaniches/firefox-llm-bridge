@@ -40,10 +40,7 @@ export function getProvider(id) {
  * Returns { provider, apiKey, model, endpoint } or null if not configured.
  */
 export async function getActiveConfig() {
-  const stored = await browser.storage.local.get([
-    "activeProvider",
-    "providers",
-  ]);
+  const stored = await browser.storage.local.get(["activeProvider", "providers"]);
 
   const activeId = stored.activeProvider || null;
   if (!activeId) return null;
@@ -59,10 +56,27 @@ export async function getActiveConfig() {
     // Defensive triple fallback: stored model, provider default, first listed.
     // Every shipped provider has `default: true` on one model, so the third
     // branch is a guard for future provider definitions that lack one.
-    /* v8 ignore next */
-    model: providerConfig.model || provider.models.find((m) => m.default)?.id || provider.models[0]?.id,
+    model: resolveModel(providerConfig.model, provider.models),
     endpoint: providerConfig.endpoint || null,
   };
+}
+
+/**
+ * Resolve a model id from the stored config, falling back to the provider's
+ * default-flagged model, then the first listed model. The last fallback is a
+ * guard for hypothetical providers shipping without a default; not exercised
+ * by the four built-in providers.
+ *
+ * @param {string|undefined} stored
+ * @param {Array<{id:string, default?: boolean}>} models
+ * @returns {string|undefined}
+ */
+function resolveModel(stored, models) {
+  if (stored) return stored;
+  const defaulted = models.find((m) => m.default);
+  /* v8 ignore next 2 */
+  if (!defaulted) return models[0]?.id;
+  return defaulted.id;
 }
 
 /**

@@ -60,7 +60,11 @@ describe("google provider", () => {
   describe("formatTools", () => {
     it("wraps in functionDeclarations with UPPERCASE types", () => {
       const out = google.formatTools([
-        { name: "click", description: "Click", input_schema: { type: "object", properties: { sel: { type: "string" } } } },
+        {
+          name: "click",
+          description: "Click",
+          input_schema: { type: "object", properties: { sel: { type: "string" } } },
+        },
       ]);
       expect(out[0].functionDeclarations[0].name).toBe("click");
       expect(out[0].functionDeclarations[0].parameters.type).toBe("OBJECT");
@@ -83,9 +87,7 @@ describe("google provider", () => {
       const out = google.formatMessages([
         {
           role: "user",
-          content: [
-            { type: "tool_result", tool_use_id: "id1", _toolName: "click", content: "ok" },
-          ],
+          content: [{ type: "tool_result", tool_use_id: "id1", _toolName: "click", content: "ok" }],
         },
       ]);
       expect(out[0].parts[0].functionResponse.name).toBe("click");
@@ -101,7 +103,10 @@ describe("google provider", () => {
 
     it("stringifies non-string tool_result content", () => {
       const out = google.formatMessages([
-        { role: "user", content: [{ type: "tool_result", tool_use_id: "id", _toolName: "x", content: { a: 1 } }] },
+        {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "id", _toolName: "x", content: { a: 1 } }],
+        },
       ]);
       expect(out[0].parts[0].functionResponse.response.result).toBe('{"a":1}');
     });
@@ -135,7 +140,13 @@ describe("google provider", () => {
 
     it("skips text blocks with empty text", () => {
       const out = google.formatMessages([
-        { role: "assistant", content: [{ type: "text", text: "" }, { type: "tool_use", id: "1", name: "x", input: {} }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "" },
+            { type: "tool_use", id: "1", name: "x", input: {} },
+          ],
+        },
       ]);
       expect(out[0].parts).toHaveLength(1);
       expect(out[0].parts[0].functionCall).toBeDefined();
@@ -147,7 +158,14 @@ describe("google provider", () => {
       globalThis.fetch.mockResolvedValueOnce(
         fetchResponse({ candidates: [{ content: { parts: [{ text: "hello" }] } }] }),
       );
-      const res = await google.call("AIzaKey", "gemini-2.5-flash", "sys", [{ role: "user", content: "hi" }], [], null);
+      const res = await google.call(
+        "AIzaKey",
+        "gemini-2.5-flash",
+        "sys",
+        [{ role: "user", content: "hi" }],
+        [],
+        null,
+      );
 
       const [url, init] = globalThis.fetch.mock.calls[0];
       expect(url).not.toMatch(/[?&]key=/);
@@ -160,7 +178,14 @@ describe("google provider", () => {
       globalThis.fetch.mockResolvedValueOnce(
         fetchResponse({ candidates: [{ content: { parts: [{ text: "x" }] } }] }),
       );
-      await google.call("k", "m", "s", [], [{ name: "n", description: "d", input_schema: { type: "object" } }], null);
+      await google.call(
+        "k",
+        "m",
+        "s",
+        [],
+        [{ name: "n", description: "d", input_schema: { type: "object" } }],
+        null,
+      );
       const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
       expect(body.tools).toBeDefined();
     });

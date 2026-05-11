@@ -38,12 +38,12 @@ It connects Firefox to a local model (via Ollama) or a cloud model (Anthropic Cl
 
 ## Supported Providers
 
-| Provider | Type | Cost | Models |
-|----------|------|------|--------|
-| **Ollama** | Local | Free | Llama 3.1, Qwen 2.5, Mistral, any installed model |
-| **Anthropic** | Cloud (BYOK) | Your API costs | Claude Sonnet 4, Opus 4, Haiku 4.5 |
-| **OpenAI** | Cloud (BYOK) | Your API costs | GPT-4o, GPT-4o Mini, o1, o3-mini |
-| **Google** | Cloud (BYOK) | Your API costs | Gemini 2.5 Flash, 2.5 Pro, 2.0 Flash |
+| Provider      | Type         | Cost           | Models                                            |
+| ------------- | ------------ | -------------- | ------------------------------------------------- |
+| **Ollama**    | Local        | Free           | Llama 3.1, Qwen 2.5, Mistral, any installed model |
+| **Anthropic** | Cloud (BYOK) | Your API costs | Claude Sonnet 4, Opus 4, Haiku 4.5                |
+| **OpenAI**    | Cloud (BYOK) | Your API costs | GPT-4o, GPT-4o Mini, o1, o3-mini                  |
+| **Google**    | Cloud (BYOK) | Your API costs | Gemini 2.5 Flash, 2.5 Pro, 2.0 Flash              |
 
 BYOK = Bring Your Own Key. You provide your API key. Usage is billed to your account. The extension never sees or stores your usage data.
 

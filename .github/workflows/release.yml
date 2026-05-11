@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, sign, attach to release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run all checks (lint, typecheck, test, web-ext lint)
+        run: npm run check
+
+      - name: Build .xpi
+        run: npm run build
+
+      - name: Verify build produced an artifact
+        run: |
+          test -f dist/*.zip || (echo "No build artifact produced" && exit 1)
+          ls -la dist/
+
+      # Optional: sign with AMO via web-ext sign. Requires WEB_EXT_API_KEY and
+      # WEB_EXT_API_SECRET secrets. Skipped silently if absent.
+      - name: Sign with AMO (web-ext sign)
+        if: ${{ env.AMO_KEY != '' && env.AMO_SECRET != '' }}
+        env:
+          AMO_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          AMO_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: |
+          npx web-ext sign \
+            --source-dir . \
+            --artifacts-dir dist \
+            --api-key "$AMO_KEY" \
+            --api-secret "$AMO_SECRET" \
+            --channel listed
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          npm install -g @cyclonedx/cyclonedx-npm
+          cyclonedx-npm --output-file dist/sbom.cdx.json || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.xpi
+            dist/sbom.cdx.json
+          generate_release_notes: true
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

@@ -83,7 +83,7 @@ const PROVIDERS = {
   anthropic,
   openai,
   google,
-  myprovider,   // <-- add here
+  myprovider, // <-- add here
 };
 ```
 
@@ -103,7 +103,7 @@ const PROVIDERS = {
   <p>Get your key from <a href="..." target="_blank">...</a></p>
   <div class="field">
     <label for="myprovider-key">API Key</label>
-    <input type="password" id="myprovider-key" placeholder="mp-..." autocomplete="off">
+    <input type="password" id="myprovider-key" placeholder="mp-..." autocomplete="off" />
   </div>
   <div class="field">
     <label for="myprovider-model">Model</label>
@@ -142,22 +142,26 @@ connect-src 'self' ... https://api.myprovider.example
 ## Provider-Specific Notes
 
 ### Anthropic
+
 - Canonical internal format — `formatMessages` is identity.
 - Requires `anthropic-dangerous-direct-browser-access: true` header (BYOK from a browser).
 - Tool format uses `input_schema`, not `parameters`.
 
 ### OpenAI
+
 - Tools wrapped as `{ type: "function", function: { name, description, parameters } }`.
 - Tool calls return arguments as **JSON strings** — must `JSON.parse`.
 - Tool results are separate `role: "tool"` messages, not nested.
 
 ### Google Gemini
+
 - JSON Schema types must be **UPPERCASED** (`STRING`, `OBJECT`, `ARRAY`) — see `_convertSchema`.
 - Roles: `user` and `model` (not `user` / `assistant`).
 - Tool calls are `functionCall` parts, tool results are `functionResponse` parts.
 - API key currently passed as a header (`x-goog-api-key`) — never in the URL.
 
 ### Ollama
+
 - OpenAI-compatible at `/v1/chat/completions`.
 - CORS gotcha: user must set `OLLAMA_ORIGINS=moz-extension://*`.
 - `detectModels()` queries `/api/tags` to populate the model dropdown.

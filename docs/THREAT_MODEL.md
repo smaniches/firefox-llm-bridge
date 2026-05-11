@@ -4,13 +4,13 @@ This document enumerates the trust boundaries, asset value, adversaries, and kno
 
 ## Assets
 
-| Asset | Sensitivity | Where it lives |
-|-------|-------------|----------------|
-| User's API keys (cloud providers) | High | `browser.storage.local` |
-| User's prompts and conversation history | High (may contain PII) | Background worker memory; sent to chosen provider |
-| Visited page content | High (varies by page) | Read by content script; sent to chosen provider when agent invoked |
-| User's browser session (cookies, sessions on visited pages) | High | Implicitly accessible to the agent because actions run on the user's authenticated tabs |
-| The user's local Ollama models | Low-Medium | localhost only |
+| Asset                                                       | Sensitivity            | Where it lives                                                                          |
+| ----------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
+| User's API keys (cloud providers)                           | High                   | `browser.storage.local`                                                                 |
+| User's prompts and conversation history                     | High (may contain PII) | Background worker memory; sent to chosen provider                                       |
+| Visited page content                                        | High (varies by page)  | Read by content script; sent to chosen provider when agent invoked                      |
+| User's browser session (cookies, sessions on visited pages) | High                   | Implicitly accessible to the agent because actions run on the user's authenticated tabs |
+| The user's local Ollama models                              | Low-Medium             | localhost only                                                                          |
 
 ## Trust Boundaries
 
@@ -46,33 +46,33 @@ This document enumerates the trust boundaries, asset value, adversaries, and kno
 
 A page the user visits attempts to exfiltrate data or manipulate the agent.
 
-| Vector | Mitigation |
-|--------|------------|
-| Read API keys from page context | Content script and page share no JS scope. Keys are in `browser.storage.local`, not `window`. |
-| Spoof messages to the background | The `onConnect` handler rejects ports whose `sender.tab` is set (content-script origin) and ports from other extensions. A content script attempting `browser.runtime.connect({ name: "topologica-sidebar" })` is dropped before any message is processed. This check lives in `background/background.js`. |
-| Inject prompt-injection text targeting the agent | **Partial mitigation only.** Documented in [Known Limitations](#known-limitations) below. |
-| Run scripts during `read_page` | Sensor reads DOM attributes; does not eval inline JS. Setting `value` uses native setter (safe). |
-| Crash the content script with a hostile DOM | Limited to that tab; background worker isolated. |
+| Vector                                           | Mitigation                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read API keys from page context                  | Content script and page share no JS scope. Keys are in `browser.storage.local`, not `window`.                                                                                                                                                                                                              |
+| Spoof messages to the background                 | The `onConnect` handler rejects ports whose `sender.tab` is set (content-script origin) and ports from other extensions. A content script attempting `browser.runtime.connect({ name: "topologica-sidebar" })` is dropped before any message is processed. This check lives in `background/background.js`. |
+| Inject prompt-injection text targeting the agent | **Partial mitigation only.** Documented in [Known Limitations](#known-limitations) below.                                                                                                                                                                                                                  |
+| Run scripts during `read_page`                   | Sensor reads DOM attributes; does not eval inline JS. Setting `value` uses native setter (safe).                                                                                                                                                                                                           |
+| Crash the content script with a hostile DOM      | Limited to that tab; background worker isolated.                                                                                                                                                                                                                                                           |
 
 ### A2 — Malicious Provider
 
 The LLM the user selected returns adversarial responses.
 
-| Vector | Mitigation |
-|--------|------------|
-| Emit `navigate` to a phishing URL | User must reload the extension to revoke; mitigated by user observability (every tool call shown in sidebar). |
-| Loop infinitely | `maxTurns` (default 25) bounds the loop. |
-| Emit `type_text` to fill credentials | System prompt instructs the model not to enter passwords without confirmation. Not a hard guarantee — relies on model alignment. |
-| Emit `task_complete` with deceptive summary | User can review tool-call history in the sidebar. |
+| Vector                                      | Mitigation                                                                                                                       |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Emit `navigate` to a phishing URL           | User must reload the extension to revoke; mitigated by user observability (every tool call shown in sidebar).                    |
+| Loop infinitely                             | `maxTurns` (default 25) bounds the loop.                                                                                         |
+| Emit `type_text` to fill credentials        | System prompt instructs the model not to enter passwords without confirmation. Not a hard guarantee — relies on model alignment. |
+| Emit `task_complete` with deceptive summary | User can review tool-call history in the sidebar.                                                                                |
 
 ### A3 — Compromised Build Artifact
 
 An attacker tampers with the released `.xpi`.
 
-| Vector | Mitigation |
-|--------|------------|
-| Modify code in release tarball | Releases are tagged in git; signed `.xpi` via AMO submission process. Reproducible build (no transpile) — anyone can rebuild from a tag and `diff`. |
-| Supply-chain attack on dev dependencies | Dev deps are not shipped. Locked via `package-lock.json` in CI. Production extension has zero npm runtime deps. |
+| Vector                                  | Mitigation                                                                                                                                          |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Modify code in release tarball          | Releases are tagged in git; signed `.xpi` via AMO submission process. Reproducible build (no transpile) — anyone can rebuild from a tag and `diff`. |
+| Supply-chain attack on dev dependencies | Dev deps are not shipped. Locked via `package-lock.json` in CI. Production extension has zero npm runtime deps.                                     |
 
 ### A4 — Local Attacker with File-System Access
 
@@ -80,11 +80,11 @@ If the user's device is compromised, the attacker can read `browser.storage.loca
 
 ### A5 — Network Attacker (MITM)
 
-| Vector | Mitigation |
-|--------|------------|
-| Intercept traffic to provider | TLS to all cloud providers; `connect-src` CSP enforces HTTPS for cloud endpoints. |
+| Vector                            | Mitigation                                                                                                        |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Intercept traffic to provider     | TLS to all cloud providers; `connect-src` CSP enforces HTTPS for cloud endpoints.                                 |
 | Intercept traffic to local Ollama | Loopback only (`localhost`, `127.0.0.1`, `[::1]`); no attacker on that path unless device is already compromised. |
-| Downgrade attack to HTTP | CSP `connect-src` enumerates only the four provider HTTPS endpoints plus loopback HTTP. |
+| Downgrade attack to HTTP          | CSP `connect-src` enumerates only the four provider HTTPS endpoints plus loopback HTTP.                           |
 
 ### A6 — Curious Maintainer / Developer
 
@@ -94,16 +94,16 @@ What the developer (TOPOLOGICA LLC) can see:
 
 ## Permission Justification
 
-| Permission | Necessity | Risk if abused |
-|------------|-----------|----------------|
-| `activeTab` | Read current page on user invocation | Low — only the user's currently active tab |
-| `tabs` | Programmatic navigation, get URL/title | Medium — full tab API; mitigated by user-visible action log |
-| `scripting` | Inject content script | Medium |
-| `storage` | Persist API keys and settings | Medium — keys are sensitive |
-| `contextMenus` | Right-click "Ask about selection" | Low |
-| `notifications` | Reserved for future use | Low |
-| `webNavigation` | Detect navigation completion | Low |
-| `<all_urls>` host | Agent operates on any page user visits | High — broad, but required for general-purpose agent |
+| Permission        | Necessity                              | Risk if abused                                              |
+| ----------------- | -------------------------------------- | ----------------------------------------------------------- |
+| `activeTab`       | Read current page on user invocation   | Low — only the user's currently active tab                  |
+| `tabs`            | Programmatic navigation, get URL/title | Medium — full tab API; mitigated by user-visible action log |
+| `scripting`       | Inject content script                  | Medium                                                      |
+| `storage`         | Persist API keys and settings          | Medium — keys are sensitive                                 |
+| `contextMenus`    | Right-click "Ask about selection"      | Low                                                         |
+| `notifications`   | Reserved for future use                | Low                                                         |
+| `webNavigation`   | Detect navigation completion           | Low                                                         |
+| `<all_urls>` host | Agent operates on any page user visits | High — broad, but required for general-purpose agent        |
 
 `webRequest`, `nativeMessaging`, `cookies`, `clipboardRead`, `clipboardWrite`, `downloads`, `history`, `bookmarks`, `proxy`, `management` are **not** requested.
 

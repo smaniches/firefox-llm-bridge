@@ -328,11 +328,10 @@ describe("runAgentLoop", () => {
   });
 
   it("handles a tool_use turn that calls task_complete", async () => {
-    providers.callLLM
-      .mockResolvedValueOnce({
-        content: [{ type: "tool_use", id: "t1", name: "task_complete", input: { summary: "done" } }],
-        stop_reason: "tool_use",
-      });
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "tool_use", id: "t1", name: "task_complete", input: { summary: "done" } }],
+      stop_reason: "tool_use",
+    });
 
     const port = makePort();
     await bridge.runAgentLoop("hi", port);
@@ -359,14 +358,13 @@ describe("runAgentLoop", () => {
   });
 
   it("continues past non-tool_use content blocks in a tool_use response (mixed content)", async () => {
-    providers.callLLM
-      .mockResolvedValueOnce({
-        content: [
-          { type: "text", text: "let me run a tool" },
-          { type: "tool_use", id: "t1", name: "task_complete", input: { summary: "done" } },
-        ],
-        stop_reason: "tool_use",
-      });
+    providers.callLLM.mockResolvedValueOnce({
+      content: [
+        { type: "text", text: "let me run a tool" },
+        { type: "tool_use", id: "t1", name: "task_complete", input: { summary: "done" } },
+      ],
+      stop_reason: "tool_use",
+    });
 
     const port = makePort();
     await bridge.runAgentLoop("go", port);
@@ -407,7 +405,9 @@ describe("runAgentLoop", () => {
   });
 
   it("emits AGENT_STOPPED on AbortError", async () => {
-    providers.callLLM.mockRejectedValueOnce(Object.assign(new Error("aborted"), { name: "AbortError" }));
+    providers.callLLM.mockRejectedValueOnce(
+      Object.assign(new Error("aborted"), { name: "AbortError" }),
+    );
     const port = makePort();
     await bridge.runAgentLoop("hi", port);
     const stopped = port.postMessage.mock.calls.filter((c) => c[0].type === "AGENT_STOPPED");
@@ -496,9 +496,7 @@ describe("runChatOnly", () => {
     providers.callLLM.mockRejectedValueOnce(new Error("fail"));
     const port = { postMessage: vi.fn() };
     await bridge.runChatOnly("?", port);
-    expect(
-      port.postMessage.mock.calls.some((c) => c[0].type === "ERROR"),
-    ).toBe(true);
+    expect(port.postMessage.mock.calls.some((c) => c[0].type === "ERROR")).toBe(true);
   });
 
   it("silently exits on AbortError", async () => {
@@ -507,9 +505,7 @@ describe("runChatOnly", () => {
     );
     const port = { postMessage: vi.fn() };
     await bridge.runChatOnly("?", port);
-    expect(
-      port.postMessage.mock.calls.some((c) => c[0].type === "ERROR"),
-    ).toBe(false);
+    expect(port.postMessage.mock.calls.some((c) => c[0].type === "ERROR")).toBe(false);
   });
 
   it("uses 'Thinking...' status when no provider info available", async () => {
@@ -580,9 +576,7 @@ describe("port message handlers", () => {
     getConnectListener()(port);
     const handler = port.onMessage.addListener.mock.calls[0][0];
     await handler({ type: "GET_STATUS" });
-    expect(port.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "STATUS" }),
-    );
+    expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "STATUS" }));
   });
 
   it("GET_STATUS returns null fields when no provider info", async () => {
@@ -644,9 +638,7 @@ describe("port message handlers", () => {
     const handler = port.onMessage.addListener.mock.calls[0][0];
     bridge.state.isAgentRunning = true;
     await handler({ type: "SEND_MESSAGE", text: "x" });
-    expect(port.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "ERROR" }),
-    );
+    expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "ERROR" }));
   });
 
   it("CHAT_ONLY no-ops while agent running", async () => {

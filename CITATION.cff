@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software in academic or other published work, please cite it as below."
+type: software
+title: "Firefox LLM Bridge"
+abstract: >-
+  An open-source AI browser agent for Mozilla Firefox, distributed as a
+  Manifest V3 WebExtension. Connects Firefox to local (Ollama) or cloud
+  (Anthropic Claude, OpenAI GPT, Google Gemini) LLMs and enables them to
+  read, navigate, and act on web pages through a semantic accessibility map.
+authors:
+  - family-names: Maniches
+    given-names: Santiago
+    orcid: "https://orcid.org/0009-0005-6480-1987"
+    affiliation: "TOPOLOGICA LLC"
+repository-code: "https://github.com/smaniches/firefox-llm-bridge"
+url: "https://topologica.app"
+license: Apache-2.0
+keywords:
+  - firefox
+  - webextension
+  - manifest-v3
+  - llm
+  - agent
+  - browser-automation
+  - ollama
+  - claude
+  - gpt
+  - gemini
+version: "0.2.0"
+date-released: "2026-05-11"

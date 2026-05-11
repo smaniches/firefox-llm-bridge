@@ -12,9 +12,7 @@
       "id": "bridge@topologica.ai",
       "strict_min_version": "128.0",
       "data_collection_permissions": {
-        "hostnames": [],
-        "purposes": ["functionality"],
-        "notes": "Page content is sent only to the user-configured LLM provider (Ollama local, Anthropic, OpenAI, or Google). No data is collected by the extension developer. API keys are stored locally."
+        "required": ["none"]
       }
     }
   },
@@ -29,12 +27,7 @@
     "webNavigation"
   ],
 
-  "host_permissions": [
-    "<all_urls>",
-    "http://localhost/*",
-    "http://127.0.0.1/*",
-    "http://[::1]/*"
-  ],
+  "host_permissions": ["<all_urls>", "http://localhost/*", "http://127.0.0.1/*", "http://[::1]/*"],
 
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:* https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com"

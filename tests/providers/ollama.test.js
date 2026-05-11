@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { ollama } from "../../background/providers/ollama.js";
 import { fetchResponse } from "../setup.js";
 
@@ -33,9 +33,7 @@ describe("ollama provider", () => {
     });
 
     it("formats unknown size as '?'", async () => {
-      globalThis.fetch.mockResolvedValueOnce(
-        fetchResponse({ models: [{ name: "x" }] }),
-      );
+      globalThis.fetch.mockResolvedValueOnce(fetchResponse({ models: [{ name: "x" }] }));
       const list = await ollama.detectModels();
       expect(list[0].name).toMatch(/\?\)/);
     });
@@ -92,7 +90,9 @@ describe("ollama provider", () => {
 
   describe("formatTools / formatMessages", () => {
     it("formatTools wraps in function envelope", () => {
-      const out = ollama.formatTools([{ name: "x", description: "y", input_schema: { type: "object" } }]);
+      const out = ollama.formatTools([
+        { name: "x", description: "y", input_schema: { type: "object" } },
+      ]);
       expect(out[0].function.name).toBe("x");
     });
 
@@ -155,7 +155,14 @@ describe("ollama provider", () => {
           choices: [{ message: { content: "hi" }, finish_reason: "stop" }],
         }),
       );
-      const res = await ollama.call(null, "llama3.1", "sys", [{ role: "user", content: "hi" }], [], null);
+      const res = await ollama.call(
+        null,
+        "llama3.1",
+        "sys",
+        [{ role: "user", content: "hi" }],
+        [],
+        null,
+      );
       expect(globalThis.fetch.mock.calls[0][0]).toMatch(/\/v1\/chat\/completions$/);
       expect(res.content[0]).toEqual({ type: "text", text: "hi" });
       expect(res.stop_reason).toBe("end_turn");
@@ -173,7 +180,14 @@ describe("ollama provider", () => {
       globalThis.fetch.mockResolvedValueOnce(
         fetchResponse({ choices: [{ message: { content: "x" }, finish_reason: "stop" }] }),
       );
-      await ollama.call(null, "m", "s", [], [{ name: "n", description: "d", input_schema: { type: "object" } }], null);
+      await ollama.call(
+        null,
+        "m",
+        "s",
+        [],
+        [{ name: "n", description: "d", input_schema: { type: "object" } }],
+        null,
+      );
       const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
       expect(body.tools).toBeDefined();
     });
@@ -253,7 +267,9 @@ describe("ollama provider", () => {
 
     it("throws helpful message on network failure (with url)", async () => {
       globalThis.fetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-      await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toThrow(/Cannot connect to Ollama/);
+      await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toThrow(
+        /Cannot connect to Ollama/,
+      );
     });
 
     it("propagates AbortError without wrapping", async () => {
@@ -263,7 +279,9 @@ describe("ollama provider", () => {
     });
 
     it("throws on non-200", async () => {
-      globalThis.fetch.mockResolvedValueOnce(fetchResponse("model not found", { ok: false, status: 404 }));
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse("model not found", { ok: false, status: 404 }),
+      );
       await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toThrow(/Ollama 404/);
     });
 

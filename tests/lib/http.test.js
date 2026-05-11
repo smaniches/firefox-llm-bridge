@@ -7,7 +7,13 @@ import {
   DEFAULT_RETRY,
   DEFAULT_TIMEOUT_MS,
 } from "../../background/lib/http.js";
-import { AuthError, RateLimitError, NetworkError, TimeoutError, ProviderError } from "../../background/lib/errors.js";
+import {
+  AuthError,
+  RateLimitError,
+  NetworkError,
+  TimeoutError,
+  ProviderError,
+} from "../../background/lib/errors.js";
 
 function mockResponse(body, { ok = true, status = 200, headers = {} } = {}) {
   const text = typeof body === "string" ? body : JSON.stringify(body);
@@ -140,7 +146,9 @@ describe("fetchWithRetry", () => {
   it("retries on 429 and honors Retry-After header (capped by maxDelayMs)", async () => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce(mockResponse("slow", { ok: false, status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(
+        mockResponse("slow", { ok: false, status: 429, headers: { "retry-after": "0" } }),
+      )
       .mockResolvedValueOnce(mockResponse("ok"));
     const res = await fetchWithRetry("u", {}, { providerId: "p", fetchImpl, retry: FAST });
     expect(res.ok).toBe(true);
@@ -217,14 +225,30 @@ describe("fetchWithRetry", () => {
   it("wraps non-Error network throws using String() fallback", async () => {
     const fetchImpl = vi.fn().mockRejectedValueOnce("plain-string-error");
     await expect(
-      fetchWithRetry("u", {}, { providerId: "p", fetchImpl, retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 } }),
+      fetchWithRetry(
+        "u",
+        {},
+        {
+          providerId: "p",
+          fetchImpl,
+          retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 },
+        },
+      ),
     ).rejects.toBeInstanceOf(NetworkError);
   });
 
   it("falls through to defensive NetworkError when maxAttempts is zero", async () => {
     const fetchImpl = vi.fn();
     await expect(
-      fetchWithRetry("u", {}, { providerId: "p", fetchImpl, retry: { maxAttempts: 0, baseDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 } }),
+      fetchWithRetry(
+        "u",
+        {},
+        {
+          providerId: "p",
+          fetchImpl,
+          retry: { maxAttempts: 0, baseDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 },
+        },
+      ),
     ).rejects.toBeInstanceOf(NetworkError);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
@@ -236,12 +260,16 @@ describe("fetchWithRetry", () => {
       });
     });
     await expect(
-      fetchWithRetry("u", {}, {
-        providerId: "p",
-        fetchImpl,
-        retry: FAST,
-        timeoutMs: 5,
-      }),
+      fetchWithRetry(
+        "u",
+        {},
+        {
+          providerId: "p",
+          fetchImpl,
+          retry: FAST,
+          timeoutMs: 5,
+        },
+      ),
     ).rejects.toBeInstanceOf(TimeoutError);
     expect(fetchImpl).toHaveBeenCalledTimes(FAST.maxAttempts);
   });
@@ -262,9 +290,9 @@ describe("fetchWithRetry", () => {
   it("re-throws an HTTP-classified error from a non-fetch source unchanged", async () => {
     const preclassified = new AuthError("p", 401, "");
     const fetchImpl = vi.fn().mockRejectedValueOnce(preclassified);
-    await expect(
-      fetchWithRetry("u", {}, { providerId: "p", fetchImpl, retry: FAST }),
-    ).rejects.toBe(preclassified);
+    await expect(fetchWithRetry("u", {}, { providerId: "p", fetchImpl, retry: FAST })).rejects.toBe(
+      preclassified,
+    );
   });
 
   it("returns response when body read for non-ok fails", async () => {

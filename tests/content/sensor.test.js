@@ -41,9 +41,7 @@ function patchVisibility() {
   Object.defineProperty(HTMLElement.prototype, "offsetParent", {
     configurable: true,
     get() {
-      return this.tagName === "BODY" || this.tagName === "HTML"
-        ? null
-        : document.body;
+      return this.tagName === "BODY" || this.tagName === "HTML" ? null : document.body;
     },
   });
   const fakeRect = () => ({
@@ -111,9 +109,7 @@ describe("sensor: double-injection guard", () => {
     // Import again WITHOUT clearing the flag
     vi.resetModules();
     await import("../../content/sensor.js");
-    expect(
-      globalThis.browser.runtime.onMessage.addListener.mock.calls.length,
-    ).toBe(initialCount);
+    expect(globalThis.browser.runtime.onMessage.addListener.mock.calls.length).toBe(initialCount);
   });
 });
 
@@ -326,7 +322,16 @@ describe("sensor: SENSOR_READ - role inference", () => {
   it("rejects elements with zero-sized bounding rect", async () => {
     document.body.innerHTML = `<button id="zero">X</button>`;
     const el = document.querySelector("#zero");
-    el.getBoundingClientRect = () => ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 });
+    el.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    });
     const r = await send({ type: "SENSOR_READ" });
     expect(r.elements.some((e) => e.selector.includes("#zero"))).toBe(false);
   });
@@ -546,7 +551,16 @@ describe("sensor: ACTION_CLICK", () => {
     document.body.innerHTML = `<button id="b">X</button>`;
     const el = document.querySelector("#b");
     // Force out-of-view via mocked getBoundingClientRect
-    el.getBoundingClientRect = () => ({ top: 5000, left: 0, bottom: 5020, right: 100, width: 100, height: 20, x: 0, y: 5000 });
+    el.getBoundingClientRect = () => ({
+      top: 5000,
+      left: 0,
+      bottom: 5020,
+      right: 100,
+      width: 100,
+      height: 20,
+      x: 0,
+      y: 5000,
+    });
     el.scrollIntoView = vi.fn();
     const r = await send({ type: "ACTION_CLICK", selector: "#b" });
     expect(el.scrollIntoView).toHaveBeenCalled();
@@ -604,7 +618,10 @@ describe("sensor: ACTION_TYPE", () => {
     // lookup returns undefined and falls through to `el.value = text`.
     const orig = Object.getOwnPropertyDescriptor;
     const spy = vi.spyOn(Object, "getOwnPropertyDescriptor").mockImplementation((obj, prop) => {
-      if (prop === "value" && (obj === HTMLInputElement.prototype || obj === HTMLTextAreaElement.prototype)) {
+      if (
+        prop === "value" &&
+        (obj === HTMLInputElement.prototype || obj === HTMLTextAreaElement.prototype)
+      ) {
         return undefined;
       }
       return orig.call(Object, obj, prop);
@@ -647,9 +664,7 @@ describe("sensor: ACTION_SCROLL", () => {
   it("scrolls to bottom", async () => {
     window.scrollTo = vi.fn();
     await send({ type: "ACTION_SCROLL", direction: "bottom" });
-    expect(window.scrollTo).toHaveBeenCalledWith(
-      expect.objectContaining({ behavior: "smooth" }),
-    );
+    expect(window.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: "smooth" }));
   });
 });
 

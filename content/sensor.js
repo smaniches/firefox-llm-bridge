@@ -30,16 +30,34 @@
   // ============================================================
 
   const INTERACTIVE_ROLES = new Set([
-    "button", "link", "textbox", "checkbox", "radio", "combobox",
-    "listbox", "menuitem", "menu", "menubar", "tab", "tablist",
-    "switch", "slider", "spinbutton", "searchbox", "option",
-    "treeitem", "gridcell", "row", "columnheader", "rowheader",
+    "button",
+    "link",
+    "textbox",
+    "checkbox",
+    "radio",
+    "combobox",
+    "listbox",
+    "menuitem",
+    "menu",
+    "menubar",
+    "tab",
+    "tablist",
+    "switch",
+    "slider",
+    "spinbutton",
+    "searchbox",
+    "option",
+    "treeitem",
+    "gridcell",
+    "row",
+    "columnheader",
+    "rowheader",
   ]);
 
   const INTERACTIVE_TAGS = {
     BUTTON: "button",
     A: "link",
-    INPUT: null,  // determined by type
+    INPUT: null, // determined by type
     TEXTAREA: "textbox",
     SELECT: "combobox",
     DETAILS: "button",
@@ -160,15 +178,19 @@
         break;
       }
       if (current.className && typeof current.className === "string") {
-        const classes = current.className.trim().split(/\s+/).filter(c => c && !c.includes(":")).slice(0, 2);
+        const classes = current.className
+          .trim()
+          .split(/\s+/)
+          .filter((c) => c && !c.includes(":"))
+          .slice(0, 2);
         if (classes.length > 0) {
-          part += "." + classes.map(c => CSS.escape(c)).join(".");
+          part += "." + classes.map((c) => CSS.escape(c)).join(".");
         }
       }
       // Add nth-child if needed for uniqueness
       const parent = current.parentElement;
       if (parent) {
-        const siblings = Array.from(parent.children).filter(s => s.tagName === current.tagName);
+        const siblings = Array.from(parent.children).filter((s) => s.tagName === current.tagName);
         if (siblings.length > 1) {
           const idx = siblings.indexOf(current) + 1;
           part += `:nth-of-type(${idx})`;
@@ -378,7 +400,7 @@
           keyCode: 13,
           which: 13,
           bubbles: true,
-        })
+        }),
       );
       el.dispatchEvent(
         new KeyboardEvent("keypress", {
@@ -387,7 +409,7 @@
           keyCode: 13,
           which: 13,
           bubbles: true,
-        })
+        }),
       );
       el.dispatchEvent(
         new KeyboardEvent("keyup", {
@@ -396,7 +418,7 @@
           keyCode: 13,
           which: 13,
           bubbles: true,
-        })
+        }),
       );
       // Also submit the form if there is one
       const form = el.closest("form");
@@ -444,7 +466,7 @@
   // MESSAGE HANDLER
   // ============================================================
 
-  browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  browser.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
     switch (msg.type) {
       case "SENSOR_READ":
         return Promise.resolve(buildSemanticMap(msg.includeText));
@@ -461,7 +483,7 @@
           msg.elementIndex,
           msg.text,
           msg.clearFirst,
-          msg.pressEnter
+          msg.pressEnter,
         );
 
       case "ACTION_SCROLL":
@@ -474,5 +496,4 @@
         return Promise.resolve({ error: "Unknown message type" });
     }
   });
-
 })();

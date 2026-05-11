@@ -1,177 +1,205 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Firefox LLM Bridge Settings</title>
-  <link rel="stylesheet" href="options.css">
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">T</div>
-      <div>
-        <h1>FIREFOX LLM BRIDGE</h1>
-        <div class="subtitle">Settings</div>
-      </div>
-    </div>
-
-    <!-- Provider Selection -->
-    <div class="section">
-      <h2>Choose Your AI Provider</h2>
-      <p>Select a provider. Ollama runs locally for free. Cloud providers require your own API key.</p>
-
-      <div class="provider-grid">
-        <div class="provider-card" data-provider="ollama">
-          <span class="card-badge badge-free">Free</span>
-          <div class="card-name">Ollama (Local)</div>
-          <div class="card-desc">Runs on your machine. No API key. No data sent anywhere.</div>
-        </div>
-        <div class="provider-card" data-provider="anthropic">
-          <span class="card-badge badge-byok">BYOK</span>
-          <div class="card-name">Anthropic Claude</div>
-          <div class="card-desc">Claude Sonnet 4, Opus 4, Haiku 4.5</div>
-        </div>
-        <div class="provider-card" data-provider="openai">
-          <span class="card-badge badge-byok">BYOK</span>
-          <div class="card-name">OpenAI</div>
-          <div class="card-desc">GPT-4o, GPT-4o Mini, o1, o3-mini</div>
-        </div>
-        <div class="provider-card" data-provider="google">
-          <span class="card-badge badge-byok">BYOK</span>
-          <div class="card-name">Google Gemini</div>
-          <div class="card-desc">Gemini 2.5 Flash, 2.5 Pro</div>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Firefox LLM Bridge Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="logo">T</div>
+        <div>
+          <h1>FIREFOX LLM BRIDGE</h1>
+          <div class="subtitle">Settings</div>
         </div>
       </div>
-    </div>
 
-    <!-- Ollama Config -->
-    <div class="section provider-config" id="config-ollama">
-      <h2><span class="conn-dot unknown" id="ollama-dot"></span>Ollama Configuration</h2>
-      <p>Make sure Ollama is running. <a href="https://ollama.com" target="_blank">Install Ollama</a> if needed.</p>
+      <!-- Provider Selection -->
+      <div class="section">
+        <h2>Choose Your AI Provider</h2>
+        <p>
+          Select a provider. Ollama runs locally for free. Cloud providers require your own API key.
+        </p>
 
-      <div class="inline-field">
+        <div class="provider-grid">
+          <div class="provider-card" data-provider="ollama">
+            <span class="card-badge badge-free">Free</span>
+            <div class="card-name">Ollama (Local)</div>
+            <div class="card-desc">Runs on your machine. No API key. No data sent anywhere.</div>
+          </div>
+          <div class="provider-card" data-provider="anthropic">
+            <span class="card-badge badge-byok">BYOK</span>
+            <div class="card-name">Anthropic Claude</div>
+            <div class="card-desc">Claude Sonnet 4, Opus 4, Haiku 4.5</div>
+          </div>
+          <div class="provider-card" data-provider="openai">
+            <span class="card-badge badge-byok">BYOK</span>
+            <div class="card-name">OpenAI</div>
+            <div class="card-desc">GPT-4o, GPT-4o Mini, o1, o3-mini</div>
+          </div>
+          <div class="provider-card" data-provider="google">
+            <span class="card-badge badge-byok">BYOK</span>
+            <div class="card-name">Google Gemini</div>
+            <div class="card-desc">Gemini 2.5 Flash, 2.5 Pro</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ollama Config -->
+      <div class="section provider-config" id="config-ollama">
+        <h2><span class="conn-dot unknown" id="ollama-dot"></span>Ollama Configuration</h2>
+        <p>
+          Make sure Ollama is running.
+          <a href="https://ollama.com" target="_blank">Install Ollama</a> if needed.
+        </p>
+
+        <div class="inline-field">
+          <div class="field">
+            <label for="ollama-endpoint">Endpoint</label>
+            <input
+              type="text"
+              id="ollama-endpoint"
+              value="http://localhost:11434"
+              placeholder="http://localhost:11434"
+            />
+          </div>
+          <button id="ollama-test" class="btn btn-secondary">Test</button>
+        </div>
+        <div class="info">
+          If CORS fails, set: <code>OLLAMA_ORIGINS=moz-extension://*</code> and restart Ollama.
+        </div>
+
+        <div class="field" style="margin-top: 16px">
+          <label for="ollama-model">Model</label>
+          <select id="ollama-model">
+            <option value="">Detecting models...</option>
+          </select>
+        </div>
+
+        <div class="btn-row">
+          <button id="ollama-save" class="btn btn-primary">Activate Ollama</button>
+          <button id="ollama-refresh" class="btn btn-secondary">Refresh Models</button>
+        </div>
+        <div id="ollama-status" class="status-msg"></div>
+      </div>
+
+      <!-- Anthropic Config -->
+      <div class="section provider-config" id="config-anthropic">
+        <h2>Anthropic Claude</h2>
+        <p>
+          Enter your API key from
+          <a href="https://console.anthropic.com/settings/keys" target="_blank"
+            >console.anthropic.com</a
+          >
+        </p>
+
         <div class="field">
-          <label for="ollama-endpoint">Endpoint</label>
-          <input type="text" id="ollama-endpoint" value="http://localhost:11434" placeholder="http://localhost:11434">
+          <label for="anthropic-key">API Key</label>
+          <input
+            type="password"
+            id="anthropic-key"
+            placeholder="sk-ant-api03-..."
+            autocomplete="off"
+          />
         </div>
-        <button id="ollama-test" class="btn btn-secondary">Test</button>
+        <div class="field">
+          <label for="anthropic-model">Model</label>
+          <select id="anthropic-model">
+            <option value="claude-sonnet-4-20250514" selected>Claude Sonnet 4</option>
+            <option value="claude-opus-4-20250514">Claude Opus 4</option>
+            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (fast)</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button id="anthropic-save" class="btn btn-primary">Activate Claude</button>
+          <button id="anthropic-test" class="btn btn-secondary">Test Connection</button>
+        </div>
+        <div id="anthropic-status" class="status-msg"></div>
       </div>
-      <div class="info">If CORS fails, set: <code>OLLAMA_ORIGINS=moz-extension://*</code> and restart Ollama.</div>
 
-      <div class="field" style="margin-top:16px">
-        <label for="ollama-model">Model</label>
-        <select id="ollama-model">
-          <option value="">Detecting models...</option>
-        </select>
+      <!-- OpenAI Config -->
+      <div class="section provider-config" id="config-openai">
+        <h2>OpenAI</h2>
+        <p>
+          Enter your API key from
+          <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a>
+        </p>
+
+        <div class="field">
+          <label for="openai-key">API Key</label>
+          <input type="password" id="openai-key" placeholder="sk-..." autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="openai-model">Model</label>
+          <select id="openai-model">
+            <option value="gpt-4o" selected>GPT-4o</option>
+            <option value="gpt-4o-mini">GPT-4o Mini (fast)</option>
+            <option value="o1">o1 (reasoning)</option>
+            <option value="o3-mini">o3-mini</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button id="openai-save" class="btn btn-primary">Activate OpenAI</button>
+          <button id="openai-test" class="btn btn-secondary">Test Connection</button>
+        </div>
+        <div id="openai-status" class="status-msg"></div>
       </div>
 
-      <div class="btn-row">
-        <button id="ollama-save" class="btn btn-primary">Activate Ollama</button>
-        <button id="ollama-refresh" class="btn btn-secondary">Refresh Models</button>
+      <!-- Google Config -->
+      <div class="section provider-config" id="config-google">
+        <h2>Google Gemini</h2>
+        <p>
+          Get your key from
+          <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>
+        </p>
+
+        <div class="field">
+          <label for="google-key">API Key</label>
+          <input type="password" id="google-key" placeholder="AIza..." autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="google-model">Model</label>
+          <select id="google-model">
+            <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash (fast)</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button id="google-save" class="btn btn-primary">Activate Gemini</button>
+          <button id="google-test" class="btn btn-secondary">Test Connection</button>
+        </div>
+        <div id="google-status" class="status-msg"></div>
       </div>
-      <div id="ollama-status" class="status-msg"></div>
+
+      <!-- Safety -->
+      <div class="section">
+        <h2>Agent Safety</h2>
+        <p>Guardrails for agent mode.</p>
+        <div class="field">
+          <label for="max-turns">Max Agent Turns per Task</label>
+          <input type="number" id="max-turns" value="25" min="1" max="100" style="width: 100px" />
+        </div>
+        <div class="btn-row">
+          <button id="safety-save" class="btn btn-primary">Save</button>
+        </div>
+        <div id="safety-status" class="status-msg"></div>
+      </div>
+
+      <!-- About -->
+      <div class="section">
+        <h2>About</h2>
+        <p style="margin-bottom: 0">
+          Firefox LLM Bridge v0.2.0<br />
+          Santiago Maniches / TOPOLOGICA LLC<br />
+          <a href="https://topologica.app" target="_blank">topologica.app</a>
+        </p>
+      </div>
+
+      <div class="footer">&copy; 2026 TOPOLOGICA LLC. All rights reserved.</div>
     </div>
 
-    <!-- Anthropic Config -->
-    <div class="section provider-config" id="config-anthropic">
-      <h2>Anthropic Claude</h2>
-      <p>Enter your API key from <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a></p>
-
-      <div class="field">
-        <label for="anthropic-key">API Key</label>
-        <input type="password" id="anthropic-key" placeholder="sk-ant-api03-..." autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="anthropic-model">Model</label>
-        <select id="anthropic-model">
-          <option value="claude-sonnet-4-20250514" selected>Claude Sonnet 4</option>
-          <option value="claude-opus-4-20250514">Claude Opus 4</option>
-          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (fast)</option>
-        </select>
-      </div>
-      <div class="btn-row">
-        <button id="anthropic-save" class="btn btn-primary">Activate Claude</button>
-        <button id="anthropic-test" class="btn btn-secondary">Test Connection</button>
-      </div>
-      <div id="anthropic-status" class="status-msg"></div>
-    </div>
-
-    <!-- OpenAI Config -->
-    <div class="section provider-config" id="config-openai">
-      <h2>OpenAI</h2>
-      <p>Enter your API key from <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a></p>
-
-      <div class="field">
-        <label for="openai-key">API Key</label>
-        <input type="password" id="openai-key" placeholder="sk-..." autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="openai-model">Model</label>
-        <select id="openai-model">
-          <option value="gpt-4o" selected>GPT-4o</option>
-          <option value="gpt-4o-mini">GPT-4o Mini (fast)</option>
-          <option value="o1">o1 (reasoning)</option>
-          <option value="o3-mini">o3-mini</option>
-        </select>
-      </div>
-      <div class="btn-row">
-        <button id="openai-save" class="btn btn-primary">Activate OpenAI</button>
-        <button id="openai-test" class="btn btn-secondary">Test Connection</button>
-      </div>
-      <div id="openai-status" class="status-msg"></div>
-    </div>
-
-    <!-- Google Config -->
-    <div class="section provider-config" id="config-google">
-      <h2>Google Gemini</h2>
-      <p>Get your key from <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a></p>
-
-      <div class="field">
-        <label for="google-key">API Key</label>
-        <input type="password" id="google-key" placeholder="AIza..." autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="google-model">Model</label>
-        <select id="google-model">
-          <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash</option>
-          <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-          <option value="gemini-2.0-flash">Gemini 2.0 Flash (fast)</option>
-        </select>
-      </div>
-      <div class="btn-row">
-        <button id="google-save" class="btn btn-primary">Activate Gemini</button>
-        <button id="google-test" class="btn btn-secondary">Test Connection</button>
-      </div>
-      <div id="google-status" class="status-msg"></div>
-    </div>
-
-    <!-- Safety -->
-    <div class="section">
-      <h2>Agent Safety</h2>
-      <p>Guardrails for agent mode.</p>
-      <div class="field">
-        <label for="max-turns">Max Agent Turns per Task</label>
-        <input type="number" id="max-turns" value="25" min="1" max="100" style="width:100px">
-      </div>
-      <div class="btn-row">
-        <button id="safety-save" class="btn btn-primary">Save</button>
-      </div>
-      <div id="safety-status" class="status-msg"></div>
-    </div>
-
-    <!-- About -->
-    <div class="section">
-      <h2>About</h2>
-      <p style="margin-bottom:0">
-        Firefox LLM Bridge v0.2.0<br>
-        Santiago Maniches / TOPOLOGICA LLC<br>
-        <a href="https://topologica.app" target="_blank">topologica.app</a>
-      </p>
-    </div>
-
-    <div class="footer">&copy; 2026 TOPOLOGICA LLC. All rights reserved.</div>
-  </div>
-
-  <script type="module" src="options.js"></script>
-</body>
+    <script type="module" src="options.js"></script>
+  </body>
 </html>

@@ -24,7 +24,9 @@ describe("openai provider", () => {
 
   describe("formatTools", () => {
     it("wraps in function envelope", () => {
-      const out = openai.formatTools([{ name: "x", description: "y", input_schema: { type: "object" } }]);
+      const out = openai.formatTools([
+        { name: "x", description: "y", input_schema: { type: "object" } },
+      ]);
       expect(out[0]).toEqual({
         type: "function",
         function: { name: "x", description: "y", parameters: { type: "object" } },
@@ -77,7 +79,9 @@ describe("openai provider", () => {
     });
 
     it("handles assistant with only text", () => {
-      const out = openai.formatMessages([{ role: "assistant", content: [{ type: "text", text: "x" }] }]);
+      const out = openai.formatMessages([
+        { role: "assistant", content: [{ type: "text", text: "x" }] },
+      ]);
       expect(out[0]).toEqual({ role: "assistant", content: "x" });
     });
 
@@ -102,7 +106,14 @@ describe("openai provider", () => {
           choices: [{ message: { content: "hi", tool_calls: null }, finish_reason: "stop" }],
         }),
       );
-      const res = await openai.call("sk-x", "gpt-4o", "sys", [{ role: "user", content: "hi" }], [{ name: "n", description: "d", input_schema: { type: "object" } }], null);
+      const res = await openai.call(
+        "sk-x",
+        "gpt-4o",
+        "sys",
+        [{ role: "user", content: "hi" }],
+        [{ name: "n", description: "d", input_schema: { type: "object" } }],
+        null,
+      );
       const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
       expect(body.tools).toBeDefined();
       expect(body.messages[0].role).toBe("system");
@@ -127,7 +138,11 @@ describe("openai provider", () => {
               message: {
                 content: null,
                 tool_calls: [
-                  { id: "c1", type: "function", function: { name: "click", arguments: '{"selector":"#a"}' } },
+                  {
+                    id: "c1",
+                    type: "function",
+                    function: { name: "click", arguments: '{"selector":"#a"}' },
+                  },
                 ],
               },
               finish_reason: "tool_calls",
@@ -152,7 +167,9 @@ describe("openai provider", () => {
             {
               message: {
                 content: null,
-                tool_calls: [{ id: "c1", type: "function", function: { name: "x", arguments: "not json" } }],
+                tool_calls: [
+                  { id: "c1", type: "function", function: { name: "x", arguments: "not json" } },
+                ],
               },
               finish_reason: "tool_calls",
             },
