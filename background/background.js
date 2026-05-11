@@ -628,7 +628,21 @@ async function executeTool(toolName, toolInput) {
           ...(state.currentWindowId ? { windowId: state.currentWindowId } : {}),
         });
         state.currentTabId = tab.id;
-        if (toolInput.url) await sleep(1500);
+        if (toolInput.url) {
+          await new Promise((resolve) => {
+            const fn = (details) => {
+              if (details.tabId === tab.id && details.frameId === 0) {
+                browser.webNavigation.onCompleted.removeListener(fn);
+                resolve();
+              }
+            };
+            browser.webNavigation.onCompleted.addListener(fn);
+            setTimeout(() => {
+              browser.webNavigation.onCompleted.removeListener(fn);
+              resolve();
+            }, 15000);
+          });
+        }
         return { success: true, tab_id: tab.id };
       }
       case "close_tab": {
@@ -653,6 +667,9 @@ async function executeTool(toolName, toolInput) {
       case "get_selection":
         return await browser.tabs.sendMessage(tabId, { type: "SENSOR_GET_SELECTION" });
       case "focus_element": {
+        if (toolInput.selector == null && toolInput.element_index == null) {
+          return { error: "Tool 'focus_element' requires either 'selector' or 'element_index'." };
+        }
         const r = await browser.tabs.sendMessage(tabId, {
           type: "ACTION_FOCUS",
           selector: toolInput.selector || null,
@@ -661,6 +678,9 @@ async function executeTool(toolName, toolInput) {
         return r;
       }
       case "set_value": {
+        if (toolInput.selector == null && toolInput.element_index == null) {
+          return { error: "Tool 'set_value' requires either 'selector' or 'element_index'." };
+        }
         const r = await browser.tabs.sendMessage(tabId, {
           type: "ACTION_SET_VALUE",
           selector: toolInput.selector || null,

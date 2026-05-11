@@ -592,13 +592,16 @@ describe("executeTool", () => {
     expect(bridge.state.currentTabId).toBe(55);
   });
 
-  it("new_tab with URL scopes to currentWindowId and waits", async () => {
+  it("new_tab with URL scopes to currentWindowId and waits for webNavigation", async () => {
     bridge.state.currentWindowId = 3;
     globalThis.browser.tabs.create = vi.fn().mockResolvedValue({ id: 56 });
     vi.useFakeTimers();
     const p = bridge.executeTool("new_tab", { url: "https://example.com" });
-    await Promise.resolve(); // flush tabs.create microtask so sleep(1500) is registered
-    vi.advanceTimersByTime(1500);
+    // Flush tabs.create microtask so the webNavigation listener is registered
+    await Promise.resolve();
+    // Fire the onCompleted event for the new tab
+    const fn = globalThis.browser.webNavigation.onCompleted.addListener.mock.calls.at(-1)[0];
+    fn({ tabId: 56, frameId: 0 });
     const r = await p;
     expect(globalThis.browser.tabs.create).toHaveBeenCalledWith({
       url: "https://example.com",
@@ -606,6 +609,17 @@ describe("executeTool", () => {
     });
     expect(r.tab_id).toBe(56);
     bridge.state.currentWindowId = null;
+    vi.useRealTimers();
+  });
+
+  it("new_tab with URL falls back to timeout when webNavigation never fires", async () => {
+    globalThis.browser.tabs.create = vi.fn().mockResolvedValue({ id: 57 });
+    vi.useFakeTimers();
+    const p = bridge.executeTool("new_tab", { url: "https://slow.example.com" });
+    await Promise.resolve();
+    vi.advanceTimersByTime(15000);
+    const r = await p;
+    expect(r.tab_id).toBe(57);
     vi.useRealTimers();
   });
 
@@ -719,6 +733,12 @@ describe("executeTool", () => {
     });
   });
 
+  it("focus_element returns error when neither selector nor element_index provided", async () => {
+    bridge.state.currentTabId = 1;
+    const r = await bridge.executeTool("focus_element", {});
+    expect(r.error).toMatch(/selector.*element_index|element_index.*selector/i);
+  });
+
   it("set_value sends ACTION_SET_VALUE and waits", async () => {
     globalThis.browser.tabs.sendMessage.mockResolvedValueOnce({ success: true });
     bridge.state.currentTabId = 1;
@@ -752,6 +772,12 @@ describe("executeTool", () => {
       value: "x",
     });
     vi.useRealTimers();
+  });
+
+  it("set_value returns error when neither selector nor element_index provided", async () => {
+    bridge.state.currentTabId = 1;
+    const r = await bridge.executeTool("set_value", { value: "42" });
+    expect(r.error).toMatch(/selector.*element_index|element_index.*selector/i);
   });
 });
 
