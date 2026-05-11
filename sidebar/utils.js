@@ -49,6 +49,10 @@ export function escapeHtml(t) {
  * Output is HTML-escaped first; only the four whitelisted constructs become
  * tags. Links require an `http(s)://` URL so `javascript:` URIs cannot leak.
  *
+ * Kept for callers that need an HTML string; new code should prefer
+ * `renderMdInto(parent, text)` which produces DOM nodes directly and avoids
+ * the `innerHTML` assignment that Mozilla's web-ext lint flags as unsafe.
+ *
  * @param {string} t
  */
 export function renderMd(t) {
@@ -63,6 +67,102 @@ export function renderMd(t) {
       '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
     )
     .replace(/\n/g, "<br>");
+}
+
+/**
+ * Token shape produced by `tokenizeMd`. One of:
+ *   { kind: "text",   value: string }
+ *   { kind: "bold",   value: string }
+ *   { kind: "code",   value: string }
+ *   { kind: "link",   value: string, href: string }
+ *   { kind: "br" }
+ *
+ * @typedef {(
+ *   | { kind: "text" | "bold" | "code", value: string }
+ *   | { kind: "link", value: string, href: string }
+ *   | { kind: "br" }
+ * )} MdToken
+ */
+
+/**
+ * Tokenize our small markdown subset into a flat array. Pure function so
+ * tests can exercise every branch without the DOM.
+ *
+ * Precedence — earliest match wins, scanning left to right:
+ *   1. `**bold**`
+ *   2. `` `inline code` ``
+ *   3. `[text](https://url)` (http(s) only)
+ *   4. `\n` → `br`
+ *   5. plain text
+ *
+ * @param {string} t
+ * @returns {MdToken[]}
+ */
+export function tokenizeMd(t) {
+  /** @type {MdToken[]} */
+  const out = [];
+  if (typeof t !== "string" || t.length === 0) return out;
+
+  // Matches one of bold | code | link | newline. We capture group indices so
+  // we can tell what fired.
+  const re = /\*\*([\s\S]+?)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(\n)/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(t)) !== null) {
+    if (m.index > last) {
+      out.push({ kind: "text", value: t.slice(last, m.index) });
+    }
+    if (m[1] !== undefined) out.push({ kind: "bold", value: m[1] });
+    else if (m[2] !== undefined) out.push({ kind: "code", value: m[2] });
+    else if (m[3] !== undefined) out.push({ kind: "link", value: m[3], href: m[4] });
+    else if (m[5] !== undefined) out.push({ kind: "br" });
+    last = re.lastIndex;
+  }
+  if (last < t.length) out.push({ kind: "text", value: t.slice(last) });
+  return out;
+}
+
+/**
+ * Render `text` (markdown subset) into `parent` using safe DOM construction.
+ * Replaces all children of `parent`. No `innerHTML` involved — Mozilla's
+ * web-ext lint accepts this construction without warnings.
+ *
+ * @param {HTMLElement} parent
+ * @param {string} text
+ */
+export function renderMdInto(parent, text) {
+  parent.textContent = "";
+  for (const tok of tokenizeMd(text)) {
+    switch (tok.kind) {
+      case "text":
+        parent.appendChild(document.createTextNode(tok.value));
+        break;
+      case "bold": {
+        const el = document.createElement("strong");
+        el.textContent = tok.value;
+        parent.appendChild(el);
+        break;
+      }
+      case "code": {
+        const el = document.createElement("code");
+        el.textContent = tok.value;
+        parent.appendChild(el);
+        break;
+      }
+      case "link": {
+        const el = document.createElement("a");
+        el.href = tok.href;
+        el.target = "_blank";
+        el.rel = "noopener noreferrer";
+        el.textContent = tok.value;
+        parent.appendChild(el);
+        break;
+      }
+      case "br":
+        parent.appendChild(document.createElement("br"));
+        break;
+    }
+  }
 }
 
 /**

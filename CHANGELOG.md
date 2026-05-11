@@ -6,6 +6,72 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-11
+
+### Fixed — bugs surfaced by self-audit of v0.5.0
+
+- **STREAM_END leak on error.** `runAgentLoop` and `runChatOnly` now
+  wrap the `callLLM` await in a `try { … } finally { send(STREAM_END) }`.
+  Previously, a network error mid-stream left the sidebar's
+  `state.streaming` non-null forever and silently suppressed every
+  subsequent `ASSISTANT_TEXT`. Confirmed by a new test that throws
+  inside `callLLM` and asserts `STREAM_END` is still emitted.
+- **`download_file` was not policy-gated.** The agent could
+  download from any URL even when the user's blocklist denied
+  navigation to the same host. New `URL_BEARING_TOOLS` set in
+  `policy.js` is now consulted for both `navigate` and
+  `download_file`. Test verifies `browser.downloads.download` is
+  never called when the host is blocked.
+- **`download_file` missing from `DESTRUCTIVE_TOOLS`.** Preview
+  mode "destructive" did not surface downloads. Added it.
+- **Chat mode was missing streaming, persistence, and cost.**
+  `runChatOnly` now streams responses (`STREAM_START`/`DELTA`/`END`),
+  persists the conversation, and records token usage — matching agent
+  mode behavior.
+- **Two `UNSAFE_VAR_ASSIGNMENT` warnings from web-ext lint.** Replaced
+  `innerHTML = renderMd(...)` with a new `renderMdInto(parent, text)`
+  helper that builds DOM nodes via `document.createElement` /
+  `createTextNode`. Mozilla's web-ext lint now reports **0 warnings**
+  (was 2). The old `renderMd` is kept for API stability but no longer
+  used by `sidebar.js`.
+
+### Improved
+
+- **Streaming renders coalesced via `requestAnimationFrame`.** A 10k-token
+  reply previously re-tokenised the entire growing string on every
+  delta (O(n²)). The new path schedules a single paint per frame
+  regardless of delta count. Multiple back-to-back deltas in the same
+  frame are exercised by a new test.
+- **Conversation history is now bounded.** New `state.maxHistory`
+  (default 50, configurable via `browser.storage.local.maxHistory`)
+  trims oldest user/assistant pairs between turns. Prevents unbounded
+  memory growth on long sessions with vision payloads.
+- **Cost counter is labelled as an estimate** in its `title` tooltip
+  ("Estimated session cost (approximate; rates may lag provider
+  pricing pages)"). Sets the user's expectation correctly.
+- **Keyboard shortcut: `Ctrl+Shift+L` (`Cmd+Shift+L` on macOS)** opens
+  the sidebar. Configured via the new `commands._execute_sidebar_action`
+  manifest entry.
+
+### Tooling
+
+- `background/lib/policy.js` exports a new `URL_BEARING_TOOLS` set so
+  any future tool that takes a URL automatically picks up domain-policy
+  enforcement.
+- `sidebar/utils.js` gains `tokenizeMd` (pure) and `renderMdInto`
+  (DOM-construction) helpers, both at 100% coverage.
+
+### Quality
+
+- 600+ tests, **100% coverage** still on lines / branches / functions /
+  statements across every file in `background/`, `content/`, `sidebar/`,
+  `options/`.
+- New test groups: chat-mode streaming/persistence/cost parity (5 tests),
+  download_file policy gate (2 tests), trimHistory (2 tests),
+  `loadSettings` for maxHistory (1 test), rAF coalescing + late-paint
+  guard (2 tests), tokenizeMd (5 tests), renderMdInto safety (4 tests).
+- `npm run lint:webext` is now clean (was 2 warnings).
+
 ## [0.5.0] - 2026-05-11
 
 ### Added — capability
@@ -230,7 +296,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `data_collection_permissions` declared in manifest per Firefox November 2025 requirement
 - Explicit `content_security_policy` to permit `http://localhost` for Ollama (works around the MV3 default that upgrades HTTP to HTTPS)
 
-[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/smaniches/firefox-llm-bridge/compare/v0.3.0...v0.4.0

@@ -9,7 +9,7 @@
  * live in ./utils.js so they can be unit-tested in isolation.
  */
 
-import { TOOL_ICONS, escapeHtml, renderMd, summarize } from "./utils.js";
+import { TOOL_ICONS, renderMdInto, summarize } from "./utils.js";
 
 /** @template T @param {T} x @returns {NonNullable<T>} */
 const must = (x) => /** @type {NonNullable<T>} */ (x);
@@ -212,8 +212,11 @@ function addMessage(role, text) {
   removeWelcome();
   const div = document.createElement("div");
   div.className = `msg msg-${role}`;
-  // Assistant text supports a small Markdown subset; user text is plain.
-  div.innerHTML = role === "assistant" ? renderMd(text) : escapeHtml(text);
+  if (role === "assistant") {
+    renderMdInto(div, text);
+  } else {
+    div.textContent = text;
+  }
   messagesEl.appendChild(div);
   scrollToBottom();
 }
@@ -315,14 +318,18 @@ function beginStreamingMessage(id) {
   div.className = "msg msg-assistant streaming";
   div.dataset.streamId = id;
   messagesEl.appendChild(div);
-  state.streaming = { id, el: div, text: "" };
+  state.streaming = { id, el: div, text: "", rafHandle: 0 };
   scrollToBottom();
 }
 
 /**
- * Append a delta chunk to the active streaming message. Re-renders the markdown
- * after each chunk so formatting appears progressively. Ignores chunks for
- * stream ids other than the active one (defensive against late deltas).
+ * Append a delta chunk to the active streaming message. Re-renders the
+ * markdown into the message element via DOM construction (no innerHTML).
+ *
+ * Renders are coalesced through `requestAnimationFrame`: when many deltas
+ * arrive in quick succession (typical for SSE streaming) only one paint
+ * happens per frame. Without this, a 10k-token reply with ~2000 deltas
+ * would re-tokenize the entire growing string 2000 times — O(n²) jank.
  *
  * @param {string} id
  * @param {string} text
@@ -330,25 +337,50 @@ function beginStreamingMessage(id) {
 function appendStreamingDelta(id, text) {
   if (!state.streaming || state.streaming.id !== id) return;
   state.streaming.text += text;
-  state.streaming.el.innerHTML = renderMd(state.streaming.text);
   state.streaming.el.classList.add("streaming");
-  scrollToBottom();
+  scheduleStreamingFlush();
 }
 
 /**
- * Finalize the active streaming message: remove the .streaming class so the
- * caret stops blinking, and clear state.streaming so subsequent
- * ASSISTANT_TEXT messages (for non-streaming providers) render normally.
+ * Coalesce render calls through rAF. The handle is stored on state.streaming
+ * so back-to-back calls in the same frame share one paint.
+ */
+function scheduleStreamingFlush() {
+  if (!state.streaming || state.streaming.rafHandle) return;
+  const s = state.streaming;
+  s.rafHandle = requestAnimationFrame(() => {
+    // s.rafHandle was set in this function; finalizeStreamingMessage cancels
+    // it before clearing state.streaming, so the only way we reach here is
+    // when the stream is still live. Capture s by closure so we don't
+    // re-read state.streaming after a possible reassignment.
+    renderMdInto(s.el, s.text);
+    s.rafHandle = 0;
+    scrollToBottom();
+  });
+}
+
+/**
+ * Finalize the active streaming message: cancel any pending rAF render, run
+ * one final synchronous render so the final text is on screen, then drop
+ * the .streaming class and clear state.streaming.
  *
  * @param {string} id
  */
 function finalizeStreamingMessage(id) {
   if (!state.streaming || state.streaming.id !== id) return;
-  state.streaming.el.classList.remove("streaming");
+  if (state.streaming.rafHandle) {
+    cancelAnimationFrame(state.streaming.rafHandle);
+    state.streaming.rafHandle = 0;
+  }
   if (state.streaming.text.length === 0) {
-    // Empty stream (assistant turn was entirely tool calls). Drop the
-    // placeholder so we don't leave a blank bubble.
+    // Empty stream (assistant turn was entirely tool calls, or the call
+    // aborted before any text arrived). Drop the placeholder.
     state.streaming.el.remove();
+  } else {
+    // Render once more so the message reflects the full accumulated text
+    // even if the last rAF didn't fire.
+    renderMdInto(state.streaming.el, state.streaming.text);
+    state.streaming.el.classList.remove("streaming");
   }
   state.streaming = null;
 }

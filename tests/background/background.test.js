@@ -544,6 +544,46 @@ describe("persistence", () => {
   });
 });
 
+describe("trimHistory", () => {
+  it("drops oldest user/assistant pairs when over maxHistory", () => {
+    bridge.state.maxHistory = 4;
+    bridge.state.conversationHistory = [
+      { role: "user", content: "u1" },
+      { role: "assistant", content: "a1" },
+      { role: "user", content: "u2" },
+      { role: "assistant", content: "a2" },
+      { role: "user", content: "u3" },
+      { role: "assistant", content: "a3" },
+    ];
+    bridge.trimHistory();
+    expect(bridge.state.conversationHistory).toEqual([
+      { role: "user", content: "u2" },
+      { role: "assistant", content: "a2" },
+      { role: "user", content: "u3" },
+      { role: "assistant", content: "a3" },
+    ]);
+  });
+
+  it("is a no-op when history is under the cap", () => {
+    bridge.state.maxHistory = 50;
+    bridge.state.conversationHistory = [{ role: "user", content: "x" }];
+    bridge.trimHistory();
+    expect(bridge.state.conversationHistory).toHaveLength(1);
+  });
+});
+
+describe("loadSettings", () => {
+  it("reads maxHistory from storage and defaults when absent", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({ maxHistory: 7 });
+    await bridge.loadSettings();
+    expect(bridge.state.maxHistory).toBe(7);
+
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({});
+    await bridge.loadSettings();
+    expect(bridge.state.maxHistory).toBe(bridge.DEFAULT_MAX_HISTORY);
+  });
+});
+
 describe("cost tracking (recordUsage)", () => {
   it("accumulates token totals and USD per call", () => {
     bridge.state.cost = { sessionUsd: 0, promptTokens: 0, completionTokens: 0 };
@@ -775,6 +815,47 @@ describe("runAgentLoop", () => {
     await bridge.runAgentLoop("hi", port);
     const results = port.postMessage.mock.calls.filter((c) => c[0].type === "TOOL_RESULT");
     expect(results.some((r) => r[0].success === false)).toBe(true);
+  });
+
+  it("denies download_file the same way as navigate (URL_BEARING_TOOLS)", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValue({
+      maxTurns: 25,
+      safetyPolicy: { previewMode: "off", blocklist: ["evil.com"] },
+    });
+    providers.callLLM
+      .mockResolvedValueOnce({
+        content: [
+          {
+            type: "tool_use",
+            id: "td",
+            name: "download_file",
+            input: { url: "https://evil.com/bad.exe", filename: "bad.exe" },
+          },
+        ],
+        stop_reason: "tool_use",
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    bridge.state.currentTabId = 1;
+    const port = makePort();
+    await bridge.runAgentLoop("hi", port);
+    const results = port.postMessage.mock.calls.filter((c) => c[0].type === "TOOL_RESULT");
+    // The download_file call must show as denied (success: false).
+    expect(results.some((r) => r[0].success === false && r[0].tool === "download_file")).toBe(true);
+    // And browser.downloads.download must NOT have been invoked.
+    expect(globalThis.browser.downloads.download).not.toHaveBeenCalled();
+  });
+
+  it("emits STREAM_END even when callLLM throws (agent loop)", async () => {
+    providers.callLLM.mockRejectedValueOnce(new Error("network"));
+    const port = makePort();
+    await bridge.runAgentLoop("hi", port);
+    const types = port.postMessage.mock.calls.map((c) => c[0].type);
+    expect(types).toContain("STREAM_START");
+    expect(types).toContain("STREAM_END");
+    expect(types).toContain("ERROR");
   });
 
   it("emits TOOL_PREVIEW for destructive tools and awaits PREVIEW_RESPONSE", async () => {
@@ -1039,6 +1120,75 @@ describe("runChatOnly", () => {
     const port = { postMessage: vi.fn() };
     await bridge.runChatOnly("hi", port);
     expect(port.postMessage.mock.calls.some((c) => c[0].type === "POLICY_WARNING")).toBe(false);
+  });
+
+  it("streams the response via STREAM_START/DELTA/END (chat-mode parity)", async () => {
+    providers.callLLM.mockImplementationOnce(async (_sp, _msgs, _tools, _signal, onChunk) => {
+      onChunk("Hel");
+      onChunk("lo");
+      return {
+        content: [{ type: "text", text: "Hello" }],
+        stop_reason: "end_turn",
+        usage: { promptTokens: 2, completionTokens: 3 },
+      };
+    });
+    const port = { postMessage: vi.fn() };
+    await bridge.runChatOnly("hi", port);
+    const types = port.postMessage.mock.calls.map((c) => c[0].type);
+    expect(types).toContain("STREAM_START");
+    expect(types).toContain("STREAM_DELTA");
+    expect(types).toContain("STREAM_END");
+  });
+
+  it("emits STREAM_END even when callLLM throws (chat-mode)", async () => {
+    providers.callLLM.mockRejectedValueOnce(new Error("boom"));
+    const port = { postMessage: vi.fn() };
+    await bridge.runChatOnly("hi", port);
+    const types = port.postMessage.mock.calls.map((c) => c[0].type);
+    expect(types).toContain("STREAM_START");
+    expect(types).toContain("STREAM_END");
+    expect(types).toContain("ERROR");
+  });
+
+  it("persists the conversation after chat-mode completes", async () => {
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "text", text: "ok" }],
+      stop_reason: "end_turn",
+      usage: { promptTokens: 1, completionTokens: 1 },
+    });
+    const port = { postMessage: vi.fn() };
+    await bridge.runChatOnly("hi", port);
+    const persisted = globalThis.browser.storage.local.set.mock.calls.find(
+      (c) => c[0][bridge.PERSIST_KEY] !== undefined,
+    );
+    expect(persisted).toBeDefined();
+  });
+
+  it("records cost when the chat-mode provider reports usage", async () => {
+    bridge.state.cost = { sessionUsd: 0, promptTokens: 0, completionTokens: 0 };
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "text", text: "ok" }],
+      stop_reason: "end_turn",
+      usage: { promptTokens: 1000, completionTokens: 500 },
+    });
+    const port = { postMessage: vi.fn() };
+    await bridge.runChatOnly("hi", port);
+    expect(bridge.state.cost.promptTokens).toBe(1000);
+    expect(bridge.state.cost.completionTokens).toBe(500);
+  });
+
+  it("idle STATUS at the end carries the formatted cost", async () => {
+    providers.callLLM.mockResolvedValueOnce({
+      content: [{ type: "text", text: "ok" }],
+      stop_reason: "end_turn",
+    });
+    const port = { postMessage: vi.fn() };
+    await bridge.runChatOnly("hi", port);
+    const idle = port.postMessage.mock.calls
+      .filter((c) => c[0].type === "STATUS")
+      .map((c) => c[0])
+      .find((s) => s.status === "idle");
+    expect(idle.cost).toBeDefined();
   });
 });
 

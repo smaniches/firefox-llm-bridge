@@ -13,10 +13,18 @@ import {
   shouldPreview,
   scanPageContent,
   frameUntrustedText,
+  URL_BEARING_TOOLS,
 } from "./lib/policy.js";
 import { computeCost, formatCost } from "./lib/pricing.js";
 
 const PERSIST_KEY = "conversationState";
+
+/**
+ * Default ceiling on the in-memory conversation history. Older messages are
+ * dropped from the front when this is exceeded; the trim only fires between
+ * LLM calls, never mid-stream. Configurable via `maxHistory` in storage.
+ */
+const DEFAULT_MAX_HISTORY = 50;
 
 const state = {
   conversationHistory: [],
@@ -24,6 +32,7 @@ const state = {
   isAgentRunning: false,
   abortController: null,
   maxTurns: 25,
+  maxHistory: DEFAULT_MAX_HISTORY,
   turnCount: 0,
   /** @type {import("./lib/policy.js").SafetyPolicy | null} */
   policy: null,
@@ -558,34 +567,41 @@ async function runAgentLoop(userMessage, port) {
         break;
       }
 
-      // Begin a streamed assistant turn. The sidebar starts a new "in-flight"
-      // message on STREAM_START and appends each STREAM_DELTA chunk. We still
-      // emit a final ASSISTANT_TEXT for non-streaming providers and as a
-      // canonical end-of-turn marker.
+      // Begin a streamed assistant turn. The sidebar opens an in-flight
+      // message on STREAM_START and appends each STREAM_DELTA. STREAM_END
+      // MUST fire whether or not the LLM call succeeds — otherwise the
+      // sidebar's streaming state is left dangling and every subsequent
+      // ASSISTANT_TEXT is suppressed by the dedup logic.
       const streamId = `t${state.turnCount}-${Date.now()}`;
       send(port, { type: "STREAM_START", id: streamId });
       const onTextChunk = (text) => {
         send(port, { type: "STREAM_DELTA", id: streamId, text });
       };
 
-      const response = await callLLM(
-        SYSTEM_PROMPT,
-        state.conversationHistory,
-        BROWSER_TOOLS,
-        state.abortController.signal,
-        onTextChunk,
-      );
+      let response;
+      try {
+        response = await callLLM(
+          SYSTEM_PROMPT,
+          state.conversationHistory,
+          BROWSER_TOOLS,
+          state.abortController.signal,
+          onTextChunk,
+        );
+      } finally {
+        // Emit STREAM_END before propagating any error from callLLM so the
+        // sidebar can release its streaming state.
+        send(port, {
+          type: "STREAM_END",
+          id: streamId,
+          cost: formatCost(state.cost.sessionUsd),
+          tokens: {
+            prompt: state.cost.promptTokens,
+            completion: state.cost.completionTokens,
+          },
+        });
+      }
       state.conversationHistory.push({ role: "assistant", content: response.content });
       if (info?.model) recordUsage(info.model, response.usage);
-      send(port, {
-        type: "STREAM_END",
-        id: streamId,
-        cost: formatCost(state.cost.sessionUsd),
-        tokens: {
-          prompt: state.cost.promptTokens,
-          completion: state.cost.completionTokens,
-        },
-      });
 
       for (const b of response.content) {
         if (b.type === "text" && b.text) send(port, { type: "ASSISTANT_TEXT", text: b.text });
@@ -609,11 +625,16 @@ async function runAgentLoop(userMessage, port) {
           break;
         }
 
-        // Policy: domain allow/blocklist on navigation.
-        if (b.name === "navigate" && state.policy) {
+        // Policy: domain allow/blocklist for any tool that takes a URL.
+        // Currently `navigate` and `download_file`; URL_BEARING_TOOLS is the
+        // single source of truth so adding a tool only touches policy.js.
+        if (URL_BEARING_TOOLS.has(b.name) && state.policy) {
           const verdict = isNavigationAllowed(b.input?.url || "", state.policy);
           if (!verdict.allowed) {
-            const denied = { error: `Navigation denied: ${verdict.reason}`, url: b.input?.url };
+            const denied = {
+              error: `Tool ${b.name} denied: ${verdict.reason}`,
+              url: b.input?.url,
+            };
             results.push({
               tool_use_id: b.id,
               toolName: b.name,
@@ -679,6 +700,8 @@ async function runAgentLoop(userMessage, port) {
         state.conversationHistory.push(await buildToolResultMessage(results));
         pushPendingVisionImage(state.conversationHistory);
       }
+      // Trim only between turns. The current turn's messages are safe.
+      trimHistory();
     }
 
     if (state.turnCount >= state.maxTurns) {
@@ -743,25 +766,54 @@ async function runChatOnly(userMessage, port) {
     message: info ? `${info.modelName}...` : "Thinking...",
   });
 
+  // Chat mode now streams, persists, and accrues cost the same way the agent
+  // loop does. The previous implementation was a silent regression: long
+  // answers blocked with no feedback, conversations vanished on restart,
+  // and BYOK costs were invisible.
+  const streamId = `chat-${Date.now()}`;
+  send(port, { type: "STREAM_START", id: streamId });
+  const onTextChunk = (text) => send(port, { type: "STREAM_DELTA", id: streamId, text });
+
   try {
-    const r = await callLLM(
-      "You are Firefox LLM Bridge. Answer questions about the page or have a general conversation. Be concise.",
-      state.conversationHistory,
-      [],
-      state.abortController.signal,
-    );
+    let r;
+    try {
+      r = await callLLM(
+        "You are Firefox LLM Bridge. Answer questions about the page or have a general conversation. Be concise.",
+        state.conversationHistory,
+        [],
+        state.abortController.signal,
+        onTextChunk,
+      );
+    } finally {
+      send(port, {
+        type: "STREAM_END",
+        id: streamId,
+        cost: formatCost(state.cost.sessionUsd),
+        tokens: {
+          prompt: state.cost.promptTokens,
+          completion: state.cost.completionTokens,
+        },
+      });
+    }
     const text = r.content
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("");
     state.conversationHistory.push({ role: "assistant", content: text });
+    if (info?.model) recordUsage(info.model, r.usage);
+    trimHistory();
     send(port, { type: "ASSISTANT_TEXT", text });
   } catch (err) {
     if (err.name !== "AbortError") send(port, { type: "ERROR", message: err.message });
   } finally {
     state.isAgentRunning = false;
     state.abortController = null;
-    send(port, { type: "STATUS", status: "idle" });
+    await persistSession();
+    send(port, {
+      type: "STATUS",
+      status: "idle",
+      cost: formatCost(state.cost.sessionUsd),
+    });
   }
 }
 
@@ -839,8 +891,22 @@ browser.runtime.onConnect.addListener((port) => {
 });
 
 async function loadSettings() {
-  const s = await browser.storage.local.get(["maxTurns"]);
+  const s = await browser.storage.local.get(["maxTurns", "maxHistory"]);
   state.maxTurns = s.maxTurns || 25;
+  state.maxHistory = s.maxHistory || DEFAULT_MAX_HISTORY;
+}
+
+/**
+ * Trim `state.conversationHistory` to at most `state.maxHistory` entries.
+ * Always preserves whole user→assistant pairs by dropping from the front in
+ * pairs of two. Called between LLM calls so it never deletes a message that
+ * is still being streamed.
+ */
+function trimHistory() {
+  const max = state.maxHistory;
+  while (state.conversationHistory.length > max) {
+    state.conversationHistory.splice(0, 2);
+  }
 }
 loadSettings();
 restoreSession();
@@ -868,6 +934,7 @@ export {
   BROWSER_TOOLS,
   SYSTEM_PROMPT,
   PERSIST_KEY,
+  DEFAULT_MAX_HISTORY,
   executeTool,
   sleep,
   runAgentLoop,
@@ -877,4 +944,5 @@ export {
   persistSession,
   restoreSession,
   recordUsage,
+  trimHistory,
 };
