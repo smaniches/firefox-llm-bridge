@@ -232,6 +232,45 @@ describe("sensor: SENSOR_READ - role inference", () => {
     expect(r.elements[0].value).toBe("hello");
   });
 
+  it("redacts value for input[type=password]", async () => {
+    document.body.innerHTML = `<input type="password" value="hunter2" />`;
+    const r = await send({ type: "SENSOR_READ" });
+    expect(r.elements[0].value).toBe("<redacted>");
+    expect(JSON.stringify(r.elements[0])).not.toContain("hunter2");
+  });
+
+  it("redacts value for autocomplete=current-password / new-password / one-time-code", async () => {
+    document.body.innerHTML = `
+      <input type="text" autocomplete="current-password" value="cp" />
+      <input type="text" autocomplete="new-password" value="np" />
+      <input type="text" autocomplete="one-time-code" value="123456" />
+    `;
+    const r = await send({ type: "SENSOR_READ" });
+    expect(r.elements[0].value).toBe("<redacted>");
+    expect(r.elements[1].value).toBe("<redacted>");
+    expect(r.elements[2].value).toBe("<redacted>");
+    const serialized = JSON.stringify(r);
+    expect(serialized).not.toContain("hunter2");
+    expect(serialized).not.toContain("123456");
+  });
+
+  it("redacts value when data-sensitive is set", async () => {
+    document.body.innerHTML = `<input type="text" data-sensitive="true" value="ssn-123" />`;
+    const r = await send({ type: "SENSOR_READ" });
+    expect(r.elements[0].value).toBe("<redacted>");
+    expect(JSON.stringify(r)).not.toContain("ssn-123");
+  });
+
+  it("redacts label fallback for password inputs (no leak via [value: …] label)", async () => {
+    // A password input without a label or placeholder previously fell back to
+    // emitting `[value: <first 100 chars>]` as its label. Ensure that path
+    // also strips the value.
+    document.body.innerHTML = `<input type="password" value="leakedviaLabel" />`;
+    const r = await send({ type: "SENSOR_READ" });
+    expect(JSON.stringify(r)).not.toContain("leakedviaLabel");
+    expect(r.elements[0].label).toContain("<redacted>");
+  });
+
   it("records href for links", async () => {
     document.body.innerHTML = `<a href="https://example.com/path">L</a>`;
     const r = await send({ type: "SENSOR_READ" });

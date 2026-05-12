@@ -11,6 +11,8 @@
 import { parseDataUrl } from "../lib/vision.js";
 import { readSSE } from "../lib/stream.js";
 import { normalizeUsage } from "../lib/pricing.js";
+import { fetchWithRetry } from "../lib/http.js";
+import { fromHttpStatus, NetworkError } from "../lib/errors.js";
 
 export const google = {
   id: "google",
@@ -184,19 +186,36 @@ export const google = {
       temperature: 0.7,
     };
 
-    const response = await fetch(url, {
+    const init = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-goog-api-key": apiKey,
       },
       body: JSON.stringify(body),
-      signal,
-    });
+    };
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Gemini API ${response.status}: ${errorBody.substring(0, 200)}`);
+    // See anthropic.js for why streaming bypasses retry.
+    let response;
+    if (stream) {
+      try {
+        response = await fetch(url, { ...init, signal });
+      } catch (e) {
+        if (e?.name === "AbortError") throw e;
+        throw new NetworkError(`Network error contacting google: ${e?.message ?? e}`, {
+          cause: e,
+          providerId: "google",
+        });
+      }
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        throw fromHttpStatus("google", response.status, errBody, response.headers);
+      }
+    } else {
+      response = await fetchWithRetry(url, init, {
+        providerId: "google",
+        signal,
+      });
     }
 
     if (!stream) {

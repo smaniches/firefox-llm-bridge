@@ -291,24 +291,66 @@ describe("ollama provider", () => {
       expect(res.content[0].id).toMatch(/^ollama-/);
     });
 
-    it("throws helpful message on network failure (with url)", async () => {
-      globalThis.fetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-      await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toThrow(
-        /Cannot connect to Ollama/,
-      );
-    });
+    it("throws a typed NetworkError with the helpful CORS hint on persistent network failure", async () => {
+      // fetchWithRetry retries 3× on transient network errors before giving up.
+      // The thrown error carries both the friendly message (so the user sees
+      // the CORS fix) AND the typed metadata (so the UI renders a NETWORK
+      // badge and a Retry button).
+      globalThis.fetch
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toMatchObject({
+        name: "NetworkError",
+        code: "NETWORK",
+        retryable: true,
+        providerId: "ollama",
+        message: expect.stringMatching(/Cannot connect to Ollama/),
+      });
+    }, 30000);
 
-    it("propagates AbortError without wrapping", async () => {
+    it("preserves the original NetworkError as `.cause` for the structured logger", async () => {
+      globalThis.fetch
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      try {
+        await ollama.call(null, "m", "s", [], [], null);
+        throw new Error("should have thrown");
+      } catch (e) {
+        expect(e.cause?.code).toBe("NETWORK");
+        expect(e.cause?.providerId).toBe("ollama");
+        // The original cause is the underlying fetchWithRetry NetworkError —
+        // distinct from the wrapper (different message).
+        expect(e.cause).not.toBe(e);
+        expect(e.cause?.message).not.toMatch(/Cannot connect to Ollama/);
+      }
+    }, 30000);
+
+    it("propagates AbortError when the caller signal aborts mid-call", async () => {
+      const controller = new AbortController();
       const abortErr = Object.assign(new Error("aborted"), { name: "AbortError" });
-      globalThis.fetch.mockRejectedValueOnce(abortErr);
-      await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toBe(abortErr);
+      globalThis.fetch.mockImplementationOnce(() => {
+        controller.abort();
+        return Promise.reject(abortErr);
+      });
+      // fetchWithRetry prefers `callerSignal.reason` (a DOMException in modern
+      // engines) over the originally-thrown error, but either way it must be
+      // an AbortError that the agent loop can recognise to skip wrapping.
+      await expect(ollama.call(null, "m", "s", [], [], controller.signal)).rejects.toMatchObject({
+        name: "AbortError",
+      });
     });
 
-    it("throws on non-200", async () => {
+    it("throws typed ProviderError on non-2xx (non-retryable 4xx)", async () => {
       globalThis.fetch.mockResolvedValueOnce(
         fetchResponse("model not found", { ok: false, status: 404 }),
       );
-      await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toThrow(/Ollama 404/);
+      await expect(ollama.call(null, "m", "s", [], [], null)).rejects.toMatchObject({
+        code: "PROVIDER_404",
+        providerId: "ollama",
+        status: 404,
+      });
     });
 
     it("throws when no choices", async () => {
@@ -452,6 +494,39 @@ describe("ollama provider", () => {
       );
       const r = await ollama.call(null, "m", "s", [], [], null, undefined, () => {});
       expect(r.content[0]).toMatchObject({ type: "tool_use", name: "x", input: {} });
+    });
+
+    it("surfaces a typed NetworkError with the helpful CORS hint on streaming network failure", async () => {
+      // Streaming path mirrors the non-streaming path: typed NetworkError so
+      // the sidebar gets the NETWORK code + Retry button, and the message
+      // points the user at the most common Ollama setup mistake.
+      globalThis.fetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      await expect(
+        ollama.call(null, "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({
+        name: "NetworkError",
+        code: "NETWORK",
+        retryable: true,
+        providerId: "ollama",
+        message: expect.stringMatching(/Cannot connect to Ollama/),
+      });
+    });
+
+    it("propagates streaming AbortError without wrapping", async () => {
+      const err = Object.assign(new Error("aborted"), { name: "AbortError" });
+      globalThis.fetch.mockRejectedValueOnce(err);
+      await expect(ollama.call(null, "m", "s", [], [], null, undefined, () => {})).rejects.toBe(
+        err,
+      );
+    });
+
+    it("throws a typed ProviderError on a streaming non-2xx response", async () => {
+      globalThis.fetch.mockResolvedValueOnce(
+        fetchResponse("not found", { ok: false, status: 404 }),
+      );
+      await expect(
+        ollama.call(null, "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({ code: "PROVIDER_404", providerId: "ollama", status: 404 });
     });
   });
 

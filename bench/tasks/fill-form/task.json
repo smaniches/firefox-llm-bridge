@@ -1,0 +1,7 @@
+{
+  "id": "fill-form",
+  "title": "Fill the newsletter signup form",
+  "prompt": "Subscribe me with the name 'Alex' and email 'alex@example.com'.",
+  "predicate": "/^ok:Alex$/.test(document.getElementById('result').textContent)",
+  "expectedTools": ["read_page", "type_text", "type_text", "click_element", "task_complete"]
+}

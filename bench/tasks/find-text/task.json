@@ -1,0 +1,7 @@
+{
+  "id": "find-text",
+  "title": "Find the mascot mentioned on the page",
+  "prompt": "What animal is the mascot of this benchmark?",
+  "predicate": "true",
+  "expectedTools": ["extract_text", "task_complete"]
+}

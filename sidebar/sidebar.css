@@ -285,6 +285,35 @@ body {
   border-radius: var(--radius);
   font-size: 12px;
   max-width: 95%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.msg-error .err-code {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  letter-spacing: 0.05em;
+}
+.msg-error .err-retry {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+}
+.msg-error .err-retry:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+}
+.msg-error .err-retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .msg-system {
   align-self: center;

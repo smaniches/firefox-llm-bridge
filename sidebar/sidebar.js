@@ -146,7 +146,14 @@ function handleMsg(msg) {
       addSystem(msg.message || "Stopped.");
       break;
     case "ERROR":
-      addError(msg.message);
+      // Typed errors carry { code, retryable, providerId } — the renderer
+      // uses these to colour the row, badge the code, and decide whether a
+      // Retry button is offered. Untyped errors still render as plain rows.
+      addError(msg.message, {
+        code: msg.code,
+        retryable: msg.retryable,
+        providerId: msg.providerId,
+      });
       if (msg.message?.includes("No LLM provider")) {
         noProviderWarning.classList.remove("hidden");
       }
@@ -316,12 +323,63 @@ function addSystem(text) {
   scrollToBottom();
 }
 
-function addError(text) {
+/**
+ * Render an error bubble. When the background sends a typed error (code,
+ * retryable, providerId) we badge the code so the user can quote it in a
+ * bug report and offer a Retry button for the retryable subset (rate
+ * limits, transient network errors, 5xx).
+ *
+ * @param {string} text
+ * @param {{ code?: string|null, retryable?: boolean, providerId?: string|null }} [meta]
+ */
+function addError(text, meta) {
   const div = document.createElement("div");
   div.className = "msg msg-error";
-  div.textContent = text;
+
+  const body = document.createElement("span");
+  body.textContent = text;
+  div.appendChild(body);
+
+  if (meta?.code) {
+    const badge = document.createElement("span");
+    badge.className = "err-code";
+    badge.textContent = meta.code;
+    div.appendChild(badge);
+  }
+
+  if (meta?.retryable) {
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "err-retry";
+    retry.textContent = "Retry";
+    retry.addEventListener("click", () => {
+      // Re-send the most recent user message in the current mode. Empty
+      // history → no-op (defensive; shouldn't happen because we only land
+      // here after a turn started).
+      const last = findLastUserText();
+      if (!last) return;
+      state.port?.postMessage({
+        type: state.mode === "agent" ? "SEND_MESSAGE" : "CHAT_ONLY",
+        text: last,
+        windowId: state.windowId,
+      });
+      retry.disabled = true;
+    });
+    div.appendChild(retry);
+  }
+
   messagesEl.appendChild(div);
   scrollToBottom();
+}
+
+/**
+ * Walk the rendered message list backwards to find the most recent user
+ * bubble's text. Used by the retry button.
+ */
+function findLastUserText() {
+  const userMsgs = messagesEl.querySelectorAll(".msg-user");
+  const last = userMsgs[userMsgs.length - 1];
+  return last ? last.textContent : null;
 }
 
 function clearMessages() {

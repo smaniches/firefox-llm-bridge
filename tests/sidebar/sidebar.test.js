@@ -233,6 +233,94 @@ describe("sidebar: message rendering", () => {
     expect(document.getElementById("no-provider-warning").classList.contains("hidden")).toBe(true);
   });
 
+  it("renders an error-code badge when ERROR carries a typed code", async () => {
+    await setup();
+    handleMsg({
+      type: "ERROR",
+      message: "rate-limited",
+      code: "RATE_LIMITED",
+      retryable: true,
+      providerId: "anthropic",
+    });
+    const bubble = document.querySelector(".msg-error");
+    expect(bubble.querySelector(".err-code").textContent).toBe("RATE_LIMITED");
+    expect(bubble.querySelector(".err-retry")).toBeTruthy();
+  });
+
+  it("offers a Retry button that re-posts the last user message in current mode", async () => {
+    await setup();
+    // Seed a user message so findLastUserText finds something.
+    const user = document.createElement("div");
+    user.className = "msg msg-user";
+    user.textContent = "do the thing";
+    document.getElementById("messages").appendChild(user);
+
+    handleMsg({
+      type: "ERROR",
+      message: "5xx",
+      code: "PROVIDER_503",
+      retryable: true,
+      providerId: "openai",
+    });
+    const retry = document.querySelector(".msg-error .err-retry");
+    expect(retry).toBeTruthy();
+    retry.click();
+    expect(port.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: expect.stringMatching(/SEND_MESSAGE|CHAT_ONLY/),
+        text: "do the thing",
+      }),
+    );
+    // Button disables itself after click to prevent double-fire.
+    expect(retry.disabled).toBe(true);
+  });
+
+  it("Retry button posts SEND_MESSAGE when in agent mode", async () => {
+    await setup();
+    document.getElementById("mode-agent").click();
+    const user = document.createElement("div");
+    user.className = "msg msg-user";
+    user.textContent = "agent task";
+    document.getElementById("messages").appendChild(user);
+    handleMsg({
+      type: "ERROR",
+      message: "5xx",
+      code: "PROVIDER_503",
+      retryable: true,
+      providerId: "anthropic",
+    });
+    document.querySelector(".msg-error .err-retry").click();
+    expect(port.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "SEND_MESSAGE", text: "agent task" }),
+    );
+  });
+
+  it("Retry button is a no-op when there is no prior user message", async () => {
+    await setup();
+    handleMsg({
+      type: "ERROR",
+      message: "rate-limited",
+      code: "RATE_LIMITED",
+      retryable: true,
+    });
+    const retry = document.querySelector(".msg-error .err-retry");
+    port.postMessage.mockClear();
+    retry.click();
+    // No SEND_MESSAGE/CHAT_ONLY was posted because there's no user bubble yet.
+    const posted = port.postMessage.mock.calls.find(
+      (c) => c[0].type === "SEND_MESSAGE" || c[0].type === "CHAT_ONLY",
+    );
+    expect(posted).toBeUndefined();
+  });
+
+  it("does not render a code badge or retry button for untyped errors", async () => {
+    await setup();
+    handleMsg({ type: "ERROR", message: "plain old error" });
+    const bubble = document.querySelector(".msg-error");
+    expect(bubble.querySelector(".err-code")).toBeNull();
+    expect(bubble.querySelector(".err-retry")).toBeNull();
+  });
+
   it("HISTORY_CLEARED resets the welcome panel", async () => {
     await setup();
     handleMsg({ type: "ASSISTANT_TEXT", text: "hello" });

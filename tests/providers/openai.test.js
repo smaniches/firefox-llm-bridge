@@ -207,10 +207,19 @@ describe("openai provider", () => {
       expect(res.content[0].input).toEqual({});
     });
 
-    it("throws on non-200", async () => {
-      globalThis.fetch.mockResolvedValueOnce(fetchResponse("err", { ok: false, status: 500 }));
-      await expect(openai.call("k", "m", "s", [], [], null)).rejects.toThrow(/OpenAI API 500/);
-    });
+    it("retries on 500 and throws typed error after retry budget", async () => {
+      // 5xx is retryable; fetchWithRetry's default budget is 3 attempts.
+      globalThis.fetch
+        .mockResolvedValueOnce(fetchResponse("err", { ok: false, status: 500 }))
+        .mockResolvedValueOnce(fetchResponse("err", { ok: false, status: 500 }))
+        .mockResolvedValueOnce(fetchResponse("err", { ok: false, status: 500 }));
+      await expect(openai.call("k", "m", "s", [], [], null)).rejects.toMatchObject({
+        code: "PROVIDER_500",
+        providerId: "openai",
+        status: 500,
+      });
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    }, 30000);
 
     it("throws when no choices are returned", async () => {
       globalThis.fetch.mockResolvedValueOnce(fetchResponse({ choices: [] }));
@@ -341,11 +350,33 @@ describe("openai provider", () => {
       expect(r.usage).toEqual({ promptTokens: 7, completionTokens: 11 });
     });
 
-    it("propagates non-200 streaming errors", async () => {
+    it("propagates non-200 streaming errors as typed ProviderError", async () => {
       globalThis.fetch.mockResolvedValueOnce(fetchResponse("err", { ok: false, status: 500 }));
+      await expect(
+        openai.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({ code: "PROVIDER_500", providerId: "openai", status: 500 });
+    });
+
+    it("wraps network failures during streaming as NetworkError", async () => {
+      globalThis.fetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      await expect(
+        openai.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({ code: "NETWORK", providerId: "openai" });
+    });
+
+    it("propagates AbortError during streaming without wrapping", async () => {
+      const err = Object.assign(new Error("aborted"), { name: "AbortError" });
+      globalThis.fetch.mockRejectedValueOnce(err);
       await expect(openai.call("k", "m", "s", [], [], null, undefined, () => {})).rejects.toThrow(
-        /OpenAI API 500/,
+        "aborted",
       );
+    });
+
+    it("falls back to String(e) in the NetworkError message when e has no .message", async () => {
+      globalThis.fetch.mockRejectedValueOnce("connection reset");
+      await expect(
+        openai.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({ code: "NETWORK", message: /connection reset/ });
     });
 
     it("tolerates a choice without a delta object", async () => {

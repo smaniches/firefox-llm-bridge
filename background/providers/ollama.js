@@ -13,6 +13,8 @@
 
 import { readNDJSON } from "../lib/stream.js";
 import { normalizeUsage } from "../lib/pricing.js";
+import { fetchWithRetry } from "../lib/http.js";
+import { fromHttpStatus, NetworkError } from "../lib/errors.js";
 
 export const ollama = {
   id: "ollama",
@@ -188,26 +190,55 @@ export const ollama = {
       body.tools = this.formatTools(tools);
     }
 
-    let response;
-    try {
-      response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal,
-      });
-    } catch (e) {
-      if (e.name === "AbortError") throw e;
-      throw new Error(
-        "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) " +
-          "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
-          `Tried: ${url}`,
-      );
-    }
+    const init = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    };
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Ollama ${response.status}: ${errorBody.substring(0, 200)}`);
+    // Ollama is local; retries are still useful when the daemon is mid-restart
+    // or a model is still loading. Streaming bypasses retry for the same
+    // reason as the cloud providers.
+    // Both the streaming and non-streaming paths surface the same
+    // operator-friendly "Cannot connect to Ollama" hint for the most common
+    // local-setup mistake (daemon down, missing CORS), but they wrap it in a
+    // typed `NetworkError` so the UI receives `code: "NETWORK"`,
+    // `retryable: true`, and `providerId: "ollama"` — letting the sidebar
+    // render the same error-code badge and Retry button as the cloud providers.
+    const helpfulMessage =
+      "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) " +
+      "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
+      `Tried: ${url}`;
+
+    let response;
+    if (stream) {
+      try {
+        response = await fetch(url, { ...init, signal });
+      } catch (e) {
+        if (e.name === "AbortError") throw e;
+        throw new NetworkError(helpfulMessage, { cause: e, providerId: "ollama" });
+      }
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw fromHttpStatus("ollama", response.status, errorBody, response.headers);
+      }
+    } else {
+      try {
+        response = await fetchWithRetry(url, init, { providerId: "ollama", signal });
+      } catch (e) {
+        if (e?.name === "AbortError" || e?.code === "AUTH_REJECTED" || e?.code === "RATE_LIMITED") {
+          throw e;
+        }
+        if (e?.code === "NETWORK") {
+          // Re-wrap the underlying NetworkError so the UI sees the
+          // user-friendly CORS hint as the message while keeping the typed
+          // metadata (`code`, `retryable`, `providerId`) intact for the
+          // sidebar's error-code badge and Retry button. The original error
+          // is preserved as `.cause` for the structured logger.
+          throw new NetworkError(helpfulMessage, { cause: e, providerId: "ollama" });
+        }
+        throw e;
+      }
     }
 
     if (!stream) {

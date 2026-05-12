@@ -536,6 +536,46 @@ describe("executeTool", () => {
     expect(bridge.state.memories[0].key).toBeNull();
   });
 
+  it("remember rejects empty content", async () => {
+    bridge.state.memories = [];
+    const r = await bridge.executeTool("remember", { content: "" });
+    expect(r.error).toBe("remember: content is empty.");
+    expect(bridge.state.memories).toHaveLength(0);
+  });
+
+  it("remember rejects non-string content", async () => {
+    bridge.state.memories = [];
+    const r = await bridge.executeTool("remember", { content: 42 });
+    expect(r.error).toBe("remember: content is empty.");
+  });
+
+  it("remember truncates entries past MEMORY_MAX_ENTRY_CHARS", async () => {
+    bridge.state.memories = [];
+    const huge = "x".repeat(bridge.MEMORY_MAX_ENTRY_CHARS + 500);
+    const r = await bridge.executeTool("remember", { content: huge });
+    expect(r.success).toBe(true);
+    expect(r.truncated).toBe(true);
+    expect(r.originalLength).toBe(huge.length);
+    expect(bridge.state.memories[0].content).toHaveLength(bridge.MEMORY_MAX_ENTRY_CHARS);
+  });
+
+  it("remember evicts oldest entries when MEMORY_MAX_ENTRIES is exceeded", async () => {
+    // Pre-fill at capacity.
+    bridge.state.memories = Array.from({ length: bridge.MEMORY_MAX_ENTRIES }, (_, i) => ({
+      id: `existing-${i}`,
+      key: null,
+      content: `fact-${i}`,
+      timestamp: i,
+    }));
+    const r = await bridge.executeTool("remember", { content: "newest fact" });
+    expect(r.success).toBe(true);
+    expect(r.evicted).toBe(1);
+    expect(bridge.state.memories).toHaveLength(bridge.MEMORY_MAX_ENTRIES);
+    // Oldest evicted, newest at tail.
+    expect(bridge.state.memories[0].id).toBe("existing-1");
+    expect(bridge.state.memories[bridge.MEMORY_MAX_ENTRIES - 1].content).toBe("newest fact");
+  });
+
   it("recall returns matching memories", async () => {
     bridge.state.memories = [
       { id: "aaa-1", key: "theme", content: "dark mode", timestamp: 1 },
@@ -1064,6 +1104,8 @@ describe("persistence", () => {
       sessionUsd: 0,
       promptTokens: 0,
       completionTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
     });
   });
 });
@@ -1266,9 +1308,45 @@ describe("cost tracking (recordUsage)", () => {
   });
 
   it("ignores undefined usage", () => {
-    bridge.state.cost = { sessionUsd: 0, promptTokens: 0, completionTokens: 0 };
+    bridge.state.cost = {
+      sessionUsd: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
     bridge.recordUsage("gpt-4o-mini", undefined);
-    expect(bridge.state.cost).toEqual({ sessionUsd: 0, promptTokens: 0, completionTokens: 0 });
+    expect(bridge.state.cost).toEqual({
+      sessionUsd: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+  });
+
+  it("accumulates cache read/creation tokens (Anthropic prompt caching)", () => {
+    bridge.state.cost = {
+      sessionUsd: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
+    bridge.recordUsage("claude-sonnet-4-20250514", {
+      promptTokens: 100,
+      completionTokens: 50,
+      cacheReadTokens: 2000,
+      cacheCreationTokens: 500,
+    });
+    expect(bridge.state.cost.cacheReadTokens).toBe(2000);
+    expect(bridge.state.cost.cacheCreationTokens).toBe(500);
+    bridge.recordUsage("claude-sonnet-4-20250514", {
+      cacheReadTokens: 100,
+      cacheCreationTokens: 10,
+    });
+    expect(bridge.state.cost.cacheReadTokens).toBe(2100);
+    expect(bridge.state.cost.cacheCreationTokens).toBe(510);
   });
 
   it("tolerates partial usage objects", () => {
@@ -1992,7 +2070,13 @@ describe("port message handlers", () => {
     await handler({ type: "CLEAR_HISTORY" });
     expect(bridge.state.conversationHistory).toEqual([]);
     expect(bridge.state.turnCount).toBe(0);
-    expect(bridge.state.cost).toEqual({ sessionUsd: 0, promptTokens: 0, completionTokens: 0 });
+    expect(bridge.state.cost).toEqual({
+      sessionUsd: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
     expect(globalThis.browser.storage.local.remove).toHaveBeenCalledWith(bridge.PERSIST_KEY);
     expect(port.postMessage).toHaveBeenCalledWith({ type: "HISTORY_CLEARED" });
   });
@@ -2104,6 +2188,123 @@ describe("port message handlers", () => {
     await handler({ type: "PREVIEW_RESPONSE", id: "missing", approved: false });
     // no throw, no entry added
     expect(bridge.state.pendingPreviews.has("missing")).toBe(false);
+  });
+
+  it("aborts the in-flight agent when the sidebar disconnects", () => {
+    const onDisconnectListeners = [];
+    const port = {
+      name: "topologica-sidebar",
+      sender: {},
+      postMessage: vi.fn(),
+      onMessage: { addListener: vi.fn() },
+      onDisconnect: { addListener: (fn) => onDisconnectListeners.push(fn) },
+    };
+    getConnectListener()(port);
+    const ctl = new AbortController();
+    bridge.state.abortController = ctl;
+    bridge.state.isAgentRunning = true;
+    onDisconnectListeners[0]();
+    expect(ctl.signal.aborted).toBe(true);
+  });
+
+  it("sidebar disconnect is a no-op when no agent is running", () => {
+    const onDisconnectListeners = [];
+    const port = {
+      name: "topologica-sidebar",
+      sender: {},
+      postMessage: vi.fn(),
+      onMessage: { addListener: vi.fn() },
+      onDisconnect: { addListener: (fn) => onDisconnectListeners.push(fn) },
+    };
+    getConnectListener()(port);
+    bridge.state.abortController = null;
+    bridge.state.isAgentRunning = false;
+    expect(() => onDisconnectListeners[0]()).not.toThrow();
+  });
+
+  it("sidebar disconnect swallows AbortController.abort failures", () => {
+    const onDisconnectListeners = [];
+    const port = {
+      name: "topologica-sidebar",
+      sender: {},
+      postMessage: vi.fn(),
+      onMessage: { addListener: vi.fn() },
+      onDisconnect: { addListener: (fn) => onDisconnectListeners.push(fn) },
+    };
+    getConnectListener()(port);
+    bridge.state.abortController = {
+      signal: { aborted: false },
+      abort: () => {
+        throw new Error("already settled");
+      },
+    };
+    bridge.state.isAgentRunning = true;
+    expect(() => onDisconnectListeners[0]()).not.toThrow();
+  });
+
+  it("GET_SESSION_LOG returns a JSON dump from the logger", async () => {
+    const port = makePortWithName();
+    getConnectListener()(port);
+    const handler = port.onMessage.addListener.mock.calls[0][0];
+    await handler({ type: "GET_SESSION_LOG" });
+    const sent = port.postMessage.mock.calls.find((c) => c[0].type === "SESSION_LOG");
+    expect(sent).toBeDefined();
+    const parsed = JSON.parse(sent[0].payload);
+    expect(Array.isArray(parsed.events)).toBe(true);
+    expect(typeof parsed.exportedAt).toBe("string");
+  });
+});
+
+describe("errorPayload", () => {
+  it("maps a typed BridgeError into a renderable ERROR payload", () => {
+    const e = Object.assign(new Error("rate-limited"), {
+      code: "RATE_LIMITED",
+      retryable: true,
+      providerId: "anthropic",
+    });
+    expect(bridge.errorPayload(e)).toEqual({
+      type: "ERROR",
+      message: "rate-limited",
+      code: "RATE_LIMITED",
+      retryable: true,
+      providerId: "anthropic",
+    });
+  });
+
+  it("handles plain errors with no typed metadata", () => {
+    expect(bridge.errorPayload(new Error("boom"))).toEqual({
+      type: "ERROR",
+      message: "boom",
+      code: null,
+      retryable: false,
+      providerId: null,
+    });
+  });
+
+  it("defaults a missing message", () => {
+    expect(bridge.errorPayload({})).toEqual({
+      type: "ERROR",
+      message: "Unexpected error.",
+      code: null,
+      retryable: false,
+      providerId: null,
+    });
+  });
+});
+
+describe("loadSettings: debug logging toggle", () => {
+  it("enables debug-level logging when debugLogging is true", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({ debugLogging: true });
+    await bridge.loadSettings();
+    const { getLoggerConfig } = await import("../../background/lib/log.js");
+    expect(getLoggerConfig()).toEqual({ level: "debug", consoleEnabled: true });
+  });
+
+  it("keeps info-level logging when debugLogging is false", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({ debugLogging: false });
+    await bridge.loadSettings();
+    const { getLoggerConfig } = await import("../../background/lib/log.js");
+    expect(getLoggerConfig()).toEqual({ level: "info", consoleEnabled: false });
   });
 });
 

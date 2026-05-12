@@ -6,6 +6,100 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-12
+
+### Added — security & privacy hardening
+
+- **Password redaction in the sensor.** `input[type="password"]`,
+  `autocomplete="current-password" | "new-password" | "one-time-code"`,
+  and any input opting in via `data-sensitive` are emitted with
+  `value: "<redacted>"` instead of their literal contents. The label
+  fallback path that previously surfaced `[value: …]` is redacted in
+  the same way, so partial leaks via label inference are closed too.
+  System prompt was updated with an explicit SENSITIVE-INPUT POLICY so
+  the model knows not to ask the user for passwords or OTPs.
+- **`execute_script` and `set_value` are now in `DESTRUCTIVE_TOOLS`.**
+  The default `previewMode: "destructive"` now surfaces a user
+  confirmation overlay before the model can evaluate arbitrary JS in
+  the page or bypass keyboard simulation on framework-controlled
+  inputs.
+- **CSP hardened with defense-in-depth directives.**
+  `default-src 'none'`, `style-src 'self'`, `img-src 'self' data: blob:`,
+  `frame-ancestors 'none'`, `base-uri 'none'`, `form-action 'none'`.
+  The privacy-regression suite asserts these directives stay set.
+- **Memory governance.** `remember` enforces a 100-entry cap and a
+  4 KB per-entry size limit; empty content is rejected; oldest entries
+  evict FIFO when the cap is exceeded. Eviction and truncation surface
+  in the tool-result payload so the model knows what happened.
+
+### Added — reliability & observability
+
+- **Retries, timeouts, and typed errors wired into every provider.**
+  Non-streaming calls go through `lib/http.js#fetchWithRetry`, which
+  honours `Retry-After`, retries 5xx and transient network failures
+  with exponential backoff + jitter, and surfaces typed
+  `AuthError` / `RateLimitError` / `NetworkError` / `ProviderError`
+  to the UI. Streaming calls bypass retry (cannot safely resume
+  mid-stream) but still emit typed errors. The sidebar renders a code
+  badge and a Retry button for retryable failures; Ollama keeps its
+  operator-friendly "Cannot connect" hint with the typed error
+  preserved as `.cause`.
+- **Cache-token accounting.** Anthropic prompt-cache reads and
+  creations now persist in `state.cost` alongside prompt and
+  completion tokens; survive session restores; survive `CLEAR_HISTORY`.
+- **Sidebar disconnect aborts the in-flight agent.** Service-worker
+  restarts and user-closes-the-sidebar no longer leave the model
+  spending tokens against a UI that nobody can see.
+- **Structured logger** in `background/lib/log.js` — namespaced,
+  ring-buffered (500-event cap), credential-redacting,
+  off-by-default. New "Debug logging" toggle in Options enables it
+  and the sidebar exposes a `GET_SESSION_LOG` port message that
+  returns a redacted JSON dump for bug reports. Nothing leaves the
+  device.
+
+### Added — testing & benchmarking
+
+- **Browser-agent task harness under `bench/`.** Three reference
+  tasks (`click-the-link`, `fill-form`, `find-text`), deterministic
+  dry runner with a CI-gated baseline at `bench/baselines/dry.json`,
+  real-mode launcher stub for a forthcoming Playwright + web-ext
+  driver. See [docs/BENCHMARKING.md](docs/BENCHMARKING.md).
+- **Pricing-drift guard.** Two new assertions in
+  `tests/lib/pricing.test.js` make `PRICING` and every provider's
+  `models[]` list converge: orphan rates fail, missing rates fail.
+- **Manifest / package / README version-consistency test.**
+  `tests/manifest-consistency.test.js` ensures the three never
+  diverge again (the v0.2.0 / v0.5.2 split that this release fixes
+  was caught by precisely this kind of test).
+- **Logger tests, error-payload tests, abort-on-disconnect tests,
+  privacy-CSP tests** added throughout; 100% coverage gate still in
+  force on every shipped file.
+
+### Added — documentation
+
+- **`docs/AUDIT_2026-05.md`** — professional audit report with
+  findings, severity ratings, and fixes-per-finding mapped to this
+  release.
+- **`docs/BENCHMARKING.md`** — harness usage, protocol, and how to
+  contribute new tasks.
+- **`docs/adr/0001-no-bundler.md` … `0006-provider-contract.md`** —
+  Architecture Decision Records for the six durable choices the
+  project commits to.
+- **`docs/ROADMAP.md` aligned with shipped reality** — items that
+  shipped in 0.3.0–0.5.x moved from "In progress" to "Shipping
+  today".
+- **`docs/AMO_REVIEW.md`** — source-layout table refreshed against
+  current line counts and library structure.
+- **README.md** version banner, Safety section, Benchmarking
+  section, Documentation table updated.
+
+### Changed
+
+- Repository version bumped from 0.5.2 → 0.6.0.
+- All provider error messages now carry `{ code, retryable, providerId }`
+  metadata; UI consumers can branch on the code instead of grep-matching
+  the message.
+
 ## [0.5.2] - 2026-05-11
 
 ### Fixed — caught by second-pass audit

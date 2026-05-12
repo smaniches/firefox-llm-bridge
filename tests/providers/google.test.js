@@ -257,9 +257,13 @@ describe("google provider", () => {
       expect(res.content[0].input).toEqual({});
     });
 
-    it("throws on non-200", async () => {
+    it("throws a typed ProviderError on non-2xx (non-retryable 400)", async () => {
       globalThis.fetch.mockResolvedValueOnce(fetchResponse("bad", { ok: false, status: 400 }));
-      await expect(google.call("k", "m", "s", [], [], null)).rejects.toThrow(/Gemini API 400/);
+      await expect(google.call("k", "m", "s", [], [], null)).rejects.toMatchObject({
+        code: "PROVIDER_400",
+        providerId: "google",
+        status: 400,
+      });
     });
 
     it("throws when no candidates", async () => {
@@ -363,11 +367,33 @@ describe("google provider", () => {
       expect(r.content[0].text).toBe("x");
     });
 
-    it("propagates non-200 errors", async () => {
+    it("propagates non-200 streaming errors as typed ProviderError", async () => {
       globalThis.fetch.mockResolvedValueOnce(fetchResponse("err", { ok: false, status: 400 }));
+      await expect(
+        google.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({ code: "PROVIDER_400", providerId: "google", status: 400 });
+    });
+
+    it("wraps network failures during streaming as NetworkError", async () => {
+      globalThis.fetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      await expect(
+        google.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({ code: "NETWORK", providerId: "google" });
+    });
+
+    it("propagates AbortError during streaming without wrapping", async () => {
+      const err = Object.assign(new Error("aborted"), { name: "AbortError" });
+      globalThis.fetch.mockRejectedValueOnce(err);
       await expect(google.call("k", "m", "s", [], [], null, undefined, () => {})).rejects.toThrow(
-        /Gemini API 400/,
+        "aborted",
       );
+    });
+
+    it("falls back to String(e) in the NetworkError message when e has no .message", async () => {
+      globalThis.fetch.mockRejectedValueOnce("connection reset");
+      await expect(
+        google.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({ code: "NETWORK", message: /connection reset/ });
     });
   });
 

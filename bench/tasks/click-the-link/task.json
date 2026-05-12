@@ -1,0 +1,7 @@
+{
+  "id": "click-the-link",
+  "title": "Click the documentation link",
+  "prompt": "Click the link that takes me to documentation.",
+  "predicate": "document.getElementById('status').textContent === 'clicked:docs'",
+  "expectedTools": ["read_page", "click_element", "task_complete"]
+}

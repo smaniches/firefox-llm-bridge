@@ -37,3 +37,6 @@ secrets.json
 
 # Competitive analysis and business docs (do not belong in repo)
 *.pdf
+
+# Bench output — per-run results are not committed; baselines are.
+bench/results-*.json

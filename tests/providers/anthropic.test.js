@@ -152,23 +152,30 @@ describe("anthropic provider", () => {
       expect(res.stop_reason).toBe("end_turn");
     });
 
-    it("throws on non-200 with status and body excerpt", async () => {
+    it("throws an AuthError with provider+status on 401", async () => {
       globalThis.fetch.mockResolvedValueOnce(
         fetchResponse("invalid api key", { ok: false, status: 401 }),
       );
 
-      await expect(anthropic.call("bad", "m", "s", [], [], null)).rejects.toThrow(
-        /Anthropic API 401/,
-      );
+      await expect(anthropic.call("bad", "m", "s", [], [], null)).rejects.toMatchObject({
+        name: "AuthError",
+        code: "AUTH_REJECTED",
+        status: 401,
+        providerId: "anthropic",
+      });
     });
 
-    it("propagates abort signal", async () => {
+    it("propagates the abort signal into the underlying fetch (composed)", async () => {
       globalThis.fetch.mockResolvedValueOnce(
         fetchResponse({ content: [], stop_reason: "end_turn" }),
       );
       const controller = new AbortController();
       await anthropic.call("k", "m", "s", [], [], controller.signal);
-      expect(globalThis.fetch.mock.calls[0][1].signal).toBe(controller.signal);
+      // fetchWithRetry composes the caller signal with a per-attempt timeout,
+      // so the passed signal is no longer identity-equal — but it must still
+      // be an AbortSignal and fetch must have been called.
+      const passedSignal = globalThis.fetch.mock.calls[0][1].signal;
+      expect(passedSignal).toBeInstanceOf(AbortSignal);
     });
   });
 
@@ -467,11 +474,64 @@ describe("anthropic provider", () => {
       expect(r.content[0].input).toEqual({});
     });
 
-    it("propagates non-200 streaming errors", async () => {
+    it("propagates non-200 streaming errors as typed AuthError", async () => {
       globalThis.fetch.mockResolvedValueOnce(fetchResponse("nope", { ok: false, status: 401 }));
       await expect(
         anthropic.call("k", "m", "s", [], [], null, undefined, () => {}),
-      ).rejects.toThrow(/Anthropic API 401/);
+      ).rejects.toMatchObject({ code: "AUTH_REJECTED", providerId: "anthropic", status: 401 });
+    });
+
+    it("wraps network failures during streaming as NetworkError", async () => {
+      globalThis.fetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      await expect(
+        anthropic.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({ code: "NETWORK", providerId: "anthropic" });
+    });
+
+    it("propagates AbortError during streaming without wrapping", async () => {
+      const err = Object.assign(new Error("aborted"), { name: "AbortError" });
+      globalThis.fetch.mockRejectedValueOnce(err);
+      await expect(
+        anthropic.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toThrow("aborted");
+    });
+
+    it("falls back to String(e) in the NetworkError message when e has no .message", async () => {
+      // Some test stubs and exotic environments throw bare strings or objects;
+      // exercise the `?? e` branch in the streaming network-error wrap.
+      globalThis.fetch.mockRejectedValueOnce("connection reset");
+      await expect(
+        anthropic.call("k", "m", "s", [], [], null, undefined, () => {}),
+      ).rejects.toMatchObject({ code: "NETWORK", message: /connection reset/ });
+    });
+  });
+
+  describe("call (non-streaming retries)", () => {
+    it("retries a 5xx response and succeeds on retry", async () => {
+      globalThis.fetch
+        .mockResolvedValueOnce(fetchResponse("oops", { ok: false, status: 503 }))
+        .mockResolvedValueOnce(fetchResponse({ content: [], stop_reason: "end_turn" }));
+      const r = await anthropic.call("k", "m", "s", [], [], null);
+      expect(r.stop_reason).toBe("end_turn");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries 429 and honors Retry-After", async () => {
+      const headers = new Headers({ "retry-after": "0" });
+      const limited = {
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
+        headers,
+        text: () => Promise.resolve("rate limited"),
+        json: () => Promise.resolve({}),
+      };
+      globalThis.fetch
+        .mockResolvedValueOnce(limited)
+        .mockResolvedValueOnce(fetchResponse({ content: [], stop_reason: "end_turn" }));
+      const r = await anthropic.call("k", "m", "s", [], [], null);
+      expect(r.stop_reason).toBe("end_turn");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -32,14 +32,27 @@ describe("policy", () => {
         "press_key",
         "drag_drop",
         "upload_file",
+        "download_file",
+        "go_back",
+        "switch_tab",
       ]) {
         expect(DESTRUCTIVE_TOOLS.has(t)).toBe(true);
       }
+    });
+    it("includes the high-power capabilities (execute_script, set_value)", () => {
+      // These were added in v0.6.0 — execute_script lets the model evaluate
+      // arbitrary JS in the page context and set_value bypasses keyboard
+      // simulation. Both deserve an explicit preview gate.
+      expect(DESTRUCTIVE_TOOLS.has("execute_script")).toBe(true);
+      expect(DESTRUCTIVE_TOOLS.has("set_value")).toBe(true);
     });
     it("excludes read-only tools", () => {
       expect(DESTRUCTIVE_TOOLS.has("read_page")).toBe(false);
       expect(DESTRUCTIVE_TOOLS.has("extract_text")).toBe(false);
       expect(DESTRUCTIVE_TOOLS.has("screenshot")).toBe(false);
+      expect(DESTRUCTIVE_TOOLS.has("find_on_page")).toBe(false);
+      expect(DESTRUCTIVE_TOOLS.has("get_selection")).toBe(false);
+      expect(DESTRUCTIVE_TOOLS.has("recall")).toBe(false);
     });
   });
 
