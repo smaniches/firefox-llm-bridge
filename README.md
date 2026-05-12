@@ -10,7 +10,7 @@ An open-source AI browser agent for Mozilla Firefox, written as a Manifest V3 We
 
 It connects Firefox to a local model (via Ollama) or a cloud model (Anthropic Claude, OpenAI GPT, Google Gemini) and lets the model read, navigate, and act on the page through a semantic accessibility map.
 
-> **Status:** v0.2.0 — pre-release. Working through public-quality milestones (test coverage, CI/CD, AMO submission) tracked in [ROADMAP](docs/ROADMAP.md) and [CHANGELOG](CHANGELOG.md).
+> **Status:** v0.6.0 — pre-release. Public-quality milestones (100% test coverage, CI/CD, signed-release pipeline, AMO submission notes) are in place. Roadmap in [ROADMAP](docs/ROADMAP.md), history in [CHANGELOG](CHANGELOG.md), professional audit in [AUDIT_2026-05.md](docs/AUDIT_2026-05.md).
 
 ---
 
@@ -98,12 +98,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for deeper detail and diagrams.
 ## Safety
 
 - Turn limit: agent stops after 25 turns (configurable)
-- Kill switch: visible stop button during execution
-- No financial transactions without explicit user confirmation
+- Kill switch: visible stop button during execution; agent also aborts automatically when the sidebar is closed
+- Preview gate: destructive tools (click, navigate, type, `execute_script`, `set_value`, downloads) require a one-click confirmation by default
+- Password redaction: `input[type=password]` and `autocomplete="*-password"` / `one-time-code` values are stripped from the accessibility map before they reach the LLM
+- Domain allow/blocklist + heuristic prompt-injection scanner
 - API keys stored locally only, never transmitted to any server except the chosen LLM provider
 - No data collected by the extension developer
 
-See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for the full threat model.
+See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for the full threat model and [AUDIT_2026-05.md](docs/AUDIT_2026-05.md) for the most recent professional audit.
 
 ## Development
 
@@ -133,12 +135,26 @@ npm run build
 npm run dev
 ```
 
+## Benchmarking
+
+A deterministic, MIT-equivalent task harness lives in `bench/`. It measures success-rate, turn-count, latency, tool usage, and cost across providers using static-HTML task fixtures.
+
+```bash
+npm run bench:dry   # deterministic CI run (no real model)
+npm run bench       # real-LLM run against your configured provider
+```
+
+Tasks live in `bench/tasks/`; expected behaviour is locked in `bench/baselines/dry.json`; see [docs/BENCHMARKING.md](docs/BENCHMARKING.md).
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — three-layer design, message flow, sensor algorithm
 - [Providers](docs/PROVIDERS.md) — adding a new LLM provider
 - [Threat Model](docs/THREAT_MODEL.md) — security boundaries and trust assumptions
 - [AMO Review Notes](docs/AMO_REVIEW.md) — notes for Mozilla reviewers
+- [Benchmarking](docs/BENCHMARKING.md) — how to run and interpret the bench harness
+- [Audit 2026-05](docs/AUDIT_2026-05.md) — most recent professional audit + fixes
+- [Architecture Decision Records](docs/adr/) — durable rationale for major design choices
 - [Privacy Policy](PRIVACY.md) — what data is sent where
 - [Changelog](CHANGELOG.md) — version history
 - [Contributing](CONTRIBUTING.md) — how to contribute

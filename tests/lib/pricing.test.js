@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { PRICING, computeCost, formatCost, normalizeUsage } from "../../background/lib/pricing.js";
+import { anthropic } from "../../background/providers/anthropic.js";
+import { openai } from "../../background/providers/openai.js";
+import { google } from "../../background/providers/google.js";
 
 describe("PRICING", () => {
   it("is frozen", () => {
@@ -23,6 +26,30 @@ describe("PRICING", () => {
       expect(PRICING[id].inputPerMTok).toBeGreaterThanOrEqual(0);
       expect(PRICING[id].outputPerMTok).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it("has no orphan PRICING entries (every key resolves to a cloud provider model)", () => {
+    // Drift in the other direction: a model gets removed from a provider but
+    // still has a PRICING entry. That's wasted maintenance; surface it loudly.
+    const providerModelIds = new Set(
+      [...anthropic.models, ...openai.models, ...google.models].map((m) => m.id),
+    );
+    const orphans = Object.keys(PRICING).filter((id) => !providerModelIds.has(id));
+    expect(orphans).toEqual([]);
+  });
+
+  it("every cloud provider model has a PRICING entry (cost calculator never silently returns 0)", () => {
+    // The opposite of the orphan check: if a new model lands in a provider
+    // file without a corresponding PRICING entry, computeCost silently
+    // returns $0 and the user sees no cost — bad UX, easy to miss in code
+    // review. This test fails so the rates are explicitly added.
+    const missing = [];
+    for (const provider of [anthropic, openai, google]) {
+      for (const m of provider.models) {
+        if (!PRICING[m.id]) missing.push(`${provider.id}:${m.id}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });
 

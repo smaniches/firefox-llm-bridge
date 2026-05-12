@@ -151,6 +151,21 @@ describe("manifest contract: CSP and permissions remain minimal", () => {
     }
   });
 
+  it("hardens CSP with default-src 'none' and locks down framing / base / form-action", () => {
+    const csp = manifest.content_security_policy?.extension_pages || "";
+    // Defense-in-depth: explicitly drop everything not opted in.
+    expect(csp).toMatch(/default-src\s+'none'/);
+    expect(csp).toMatch(/frame-ancestors\s+'none'/);
+    expect(csp).toMatch(/base-uri\s+'none'/);
+    expect(csp).toMatch(/form-action\s+'none'/);
+    // Script/style restricted to extension origin.
+    expect(csp).toMatch(/script-src\s+'self'/);
+    expect(csp).toMatch(/style-src\s+'self'/);
+    // No unsafe-inline / unsafe-eval anywhere.
+    expect(csp).not.toMatch(/'unsafe-inline'/);
+    expect(csp).not.toMatch(/'unsafe-eval'/);
+  });
+
   it("declares 'no developer data collection' via browser_specific_settings", () => {
     const gecko = manifest.browser_specific_settings?.gecko;
     expect(gecko).toBeDefined();

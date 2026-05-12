@@ -1,6 +1,6 @@
 {
   "name": "firefox-llm-bridge",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "private": true,
   "description": "The first AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs.",
   "author": {
@@ -29,12 +29,14 @@
     "check": "npm run lint && npm run lint:webext && npm run typecheck && npm run test:coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "lint:webext": "web-ext lint --source-dir . --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'assets/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'playwright.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig'",
+    "lint:webext": "web-ext lint --source-dir . --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'assets/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'bench/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'playwright.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig'",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'assets/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'playwright.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig' 'CLAUDE.md'",
-    "dev": "web-ext run --source-dir . --browser-console"
+    "build": "web-ext build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files 'node_modules/**' 'coverage/**' 'tests/**' 'docs/**' 'assets/**' 'dist/**' 'web-ext-artifacts/**' '.github/**' 'bench/**' 'package.json' 'package-lock.json' 'eslint.config.js' 'vitest.config.js' 'playwright.config.js' 'tsconfig.json' '.prettierrc.json' '.prettierignore' '.editorconfig' 'CLAUDE.md'",
+    "dev": "web-ext run --source-dir . --browser-console",
+    "bench": "node bench/runner.js",
+    "bench:dry": "node bench/runner.js --dry"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

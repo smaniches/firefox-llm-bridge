@@ -355,12 +355,34 @@ describe("options: safety panel", () => {
     globalThis.fetch.mockResolvedValue(fetchResponse({ models: [] }));
   });
 
-  it("saves valid maxTurns to storage", async () => {
+  it("saves valid maxTurns + debugLogging to storage", async () => {
     await setup();
     document.getElementById("max-turns").value = "10";
+    document.getElementById("debug-logging").checked = true;
     document.getElementById("safety-save").click();
     await new Promise((r) => setTimeout(r, 5));
-    expect(globalThis.browser.storage.local.set).toHaveBeenCalledWith({ maxTurns: 10 });
+    expect(globalThis.browser.storage.local.set).toHaveBeenCalledWith({
+      maxTurns: 10,
+      debugLogging: true,
+    });
+  });
+
+  it("saves with debugLogging false when the checkbox is unchecked", async () => {
+    await setup();
+    document.getElementById("max-turns").value = "12";
+    document.getElementById("debug-logging").checked = false;
+    document.getElementById("safety-save").click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(globalThis.browser.storage.local.set).toHaveBeenCalledWith({
+      maxTurns: 12,
+      debugLogging: false,
+    });
+  });
+
+  it("restores the debug-logging checkbox from storage on load", async () => {
+    globalThis.browser.storage.local.get.mockResolvedValueOnce({ debugLogging: true });
+    await setup();
+    expect(document.getElementById("debug-logging").checked).toBe(true);
   });
 
   it("rejects out-of-range values", async () => {

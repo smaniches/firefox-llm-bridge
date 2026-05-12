@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Firefox LLM Bridge",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "An open-source AI browser agent for Firefox. Navigate, extract, and automate with local or cloud LLMs (Ollama, Claude, GPT, Gemini).",
   "author": "Santiago Maniches / TOPOLOGICA LLC",
   "homepage_url": "https://topologica.ai",
@@ -31,7 +31,7 @@
   "host_permissions": ["<all_urls>", "http://localhost/*", "http://127.0.0.1/*", "http://[::1]/*"],
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:* https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com"
+    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; object-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; connect-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:* https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com"
   },
 
   "background": {

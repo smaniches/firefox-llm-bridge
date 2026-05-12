@@ -1,0 +1,70 @@
+{
+  "generatedAt": "2026-05-12T16:42:28.951Z",
+  "mode": "dry",
+  "taskCount": 3,
+  "successCount": 3,
+  "totalTurns": 10,
+  "totalUsd": 0,
+  "results": [
+    {
+      "id": "click-the-link",
+      "title": "Click the documentation link",
+      "mode": "dry",
+      "success": true,
+      "turns": 3,
+      "wallMs": 0,
+      "toolCounts": {
+        "read_page": 1,
+        "click_element": 1,
+        "task_complete": 1
+      },
+      "tokens": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheCreationTokens": 0
+      },
+      "usdEstimate": 0
+    },
+    {
+      "id": "fill-form",
+      "title": "Fill the newsletter signup form",
+      "mode": "dry",
+      "success": true,
+      "turns": 5,
+      "wallMs": 0,
+      "toolCounts": {
+        "read_page": 1,
+        "type_text": 2,
+        "click_element": 1,
+        "task_complete": 1
+      },
+      "tokens": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheCreationTokens": 0
+      },
+      "usdEstimate": 0
+    },
+    {
+      "id": "find-text",
+      "title": "Find the mascot mentioned on the page",
+      "mode": "dry",
+      "success": true,
+      "turns": 2,
+      "wallMs": 0,
+      "toolCounts": {
+        "extract_text": 1,
+        "task_complete": 1
+      },
+      "tokens": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheCreationTokens": 0
+      },
+      "usdEstimate": 0
+    }
+  ]
+}

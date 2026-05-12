@@ -10,6 +10,8 @@
 
 import { readSSE } from "../lib/stream.js";
 import { normalizeUsage } from "../lib/pricing.js";
+import { fetchWithRetry } from "../lib/http.js";
+import { fromHttpStatus, NetworkError } from "../lib/errors.js";
 
 export const openai = {
   id: "openai",
@@ -158,19 +160,36 @@ export const openai = {
       body.stream_options = { include_usage: true };
     }
 
-    const response = await fetch(this.endpoint, {
+    const init = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
-      signal,
-    });
+    };
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`OpenAI API ${response.status}: ${errorBody.substring(0, 200)}`);
+    // See anthropic.js for why streaming bypasses retry.
+    let response;
+    if (stream) {
+      try {
+        response = await fetch(this.endpoint, { ...init, signal });
+      } catch (e) {
+        if (e?.name === "AbortError") throw e;
+        throw new NetworkError(`Network error contacting openai: ${e?.message ?? e}`, {
+          cause: e,
+          providerId: "openai",
+        });
+      }
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        throw fromHttpStatus("openai", response.status, errBody, response.headers);
+      }
+    } else {
+      response = await fetchWithRetry(this.endpoint, init, {
+        providerId: "openai",
+        signal,
+      });
     }
 
     if (!stream) {

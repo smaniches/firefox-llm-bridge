@@ -2,57 +2,71 @@
 
 This file separates **what the extension does today** from **what is planned**. Anything not in the "Shipping today" section is **not yet implemented**.
 
-Last updated: 2026-05-11
+Last updated: 2026-05-12
 
 ---
 
-## Shipping today (v0.2.0)
+## Shipping today (v0.6.0)
 
-| Capability                                                                                                       | Status |
-| ---------------------------------------------------------------------------------------------------------------- | ------ |
-| Sidebar chat with the configured LLM                                                                             | Works  |
-| Agent mode (multi-step task execution)                                                                           | Works  |
-| Providers: Ollama, Anthropic, OpenAI, Google                                                                     | Works  |
-| BYOK API-key configuration in Options page                                                                       | Works  |
-| Local-only Ollama mode (no cloud)                                                                                | Works  |
-| Accessibility-tree page sensor                                                                                   | Works  |
-| DOM actions: click, type, scroll, navigate, extract text, screenshot, wait, go back, get tab info, task complete | Works  |
-| Turn limit + abort control                                                                                       | Works  |
-| Right-click "Ask about selection" context menu                                                                   | Works  |
-| Apache-2.0 license, governance docs, threat model                                                                | Works  |
+| Capability                                                                                                                                                       | Status |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Sidebar chat with the configured LLM                                                                                                                             | Works  |
+| Agent mode (multi-step task execution)                                                                                                                           | Works  |
+| Providers: Ollama, Anthropic, OpenAI, Google (BYOK)                                                                                                              | Works  |
+| Local-only Ollama mode (no cloud)                                                                                                                                | Works  |
+| Accessibility-tree page sensor                                                                                                                                   | Works  |
+| Action tools: click, type, scroll, navigate, hover, press_key, drag_drop, upload_file, download_file, set_value, focus_element, wait_for_element, execute_script | Works  |
+| Sensor tools: read_page, extract_text, screenshot, find_on_page, get_selection                                                                                   | Works  |
+| Tab tools: list_tabs, switch_tab, new_tab, close_tab, get_tab_info                                                                                               | Works  |
+| Vision mode: screenshot bytes piped into the provider request                                                                                                    | Works  |
+| Persistent memory: remember / recall / forget with quota + FIFO eviction                                                                                         | Works  |
+| Streaming responses (SSE for Anthropic/OpenAI/Google, NDJSON for Ollama)                                                                                         | Works  |
+| Anthropic prompt caching with cache-token accounting                                                                                                             | Works  |
+| Anthropic extended thinking (opt-in)                                                                                                                             | Works  |
+| Retry with exponential backoff + jitter, per-request timeouts, `Retry-After` honouring                                                                           | Works  |
+| Typed error hierarchy (`AuthError` / `RateLimitError` / `NetworkError` / `ProviderError`) with retry buttons in the UI                                           | Works  |
+| Turn limit + abort control + abort-on-sidebar-disconnect                                                                                                         | Works  |
+| Preview gate for destructive tools (configurable: off / destructive-only / all)                                                                                  | Works  |
+| Domain allowlist + blocklist                                                                                                                                     | Works  |
+| Heuristic prompt-injection scanner + `[BEGIN UNTRUSTED PAGE CONTENT]` framing                                                                                    | Works  |
+| Password-field redaction in the accessibility map                                                                                                                | Works  |
+| Structured logger with redaction + downloadable session trace (off by default)                                                                                   | Works  |
+| Right-click "Ask about selection" context menu                                                                                                                   | Works  |
+| Browser-agent benchmark harness (dry mode in CI; real mode wiring next)                                                                                          | Works  |
+| 100% unit-test coverage with V8 provider                                                                                                                         | Works  |
+| GitHub Actions CI (lint + Prettier + typecheck + test + web-ext lint + build)                                                                                    | Works  |
+| Reproducible signed `.xpi` release workflow + CycloneDX SBOM                                                                                                     | Works  |
+| Apache-2.0 license, governance docs, threat model, AMO submission notes                                                                                          | Works  |
 
 ---
 
-## In progress
+## In progress (target v0.7.0)
 
-| Capability                                                           | Track        | Target |
-| -------------------------------------------------------------------- | ------------ | ------ |
-| 100% unit-test coverage with V8 provider                             | quality      | v0.3.0 |
-| GitHub Actions CI (lint, typecheck, test, web-ext lint, npm audit)   | quality      | v0.3.0 |
-| Reproducible signed `.xpi` release workflow                          | distribution | v0.3.0 |
-| `browser.i18n.getMessage` wired through UI                           | a11y/i18n    | v0.3.0 |
-| `prefers-color-scheme` light/dark adaptation                         | a11y/UX      | v0.3.0 |
-| ARIA + keyboard-navigation audit on sidebar and options              | a11y         | v0.3.0 |
-| Retry with exponential backoff and per-request timeouts in providers | reliability  | v0.3.0 |
-| Typed error hierarchy with actionable UI messages                    | reliability  | v0.3.0 |
-| 429 `Retry-After` handling                                           | reliability  | v0.3.0 |
-| Vision-mode: screenshot bytes piped into provider request            | capability   | v0.3.0 |
+| Capability                                                         | Track     |
+| ------------------------------------------------------------------ | --------- |
+| `browser.i18n.getMessage` wired through every UI string            | a11y/i18n |
+| `prefers-color-scheme` light/dark adaptation                       | a11y/UX   |
+| ARIA + keyboard-navigation audit on sidebar and options            | a11y      |
+| Real-mode bench launcher (Playwright + web-ext)                    | quality   |
+| Conversation export / import as JSON (validated, never auto-execs) | UX        |
+| Memory governance UI (list, search, delete) in Options             | UX        |
+| Optional screenshot redaction toggle                               | privacy   |
+| Prompt-injection fuzz corpus + property tests                      | security  |
 
 ---
 
-## Planned (next releases)
+## Planned (next releases, post-v0.7.0)
 
-| Capability                                                              | Notes                                                      |
-| ----------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Hover, drag, multi-key keyboard events as new agent tools               | Stays within WebExtension capabilities                     |
-| Mutation-observer-driven sensor refresh                                 | Page is dynamic; today the model re-reads when needed      |
-| Multi-tab orchestration (open new tabs, switch tabs as an agent action) | Requires new `tabs.create` tool + safety review            |
-| Streaming responses (SSE)                                               | All four providers support it; UI needs incremental render |
-| Conversation export (JSON) + optional persistence                       | User-controlled                                            |
-| Cost / token-usage estimator in sidebar                                 | Read response usage fields where available                 |
-| Right-click "Send page to agent"                                        | Extends current context menu                               |
-| Saved prompt presets / agent personas                                   | Local-only                                                 |
-| Provider plug-in API (load a custom provider from a local file)         | Requires careful security review                           |
+| Capability                                                      | Notes                                                         |
+| --------------------------------------------------------------- | ------------------------------------------------------------- |
+| Mutation-observer-driven sensor refresh                         | Today the model re-reads on demand                            |
+| Right-click "Send page to agent"                                | Extends the existing context menu                             |
+| Saved prompt presets / agent personas                           | Local-only, no server                                         |
+| Provider plug-in API (load a custom provider from a local file) | Needs a careful security review before shipping               |
+| Opt-in provider failover                                        | e.g. retry on Ollama if Anthropic returns NETWORK             |
+| Cost-ceiling guardrail                                          | Hard-stop the agent when session USD exceeds a user-set limit |
+| Replay tooling                                                  | Re-run a captured logger session against a stub LLM           |
+| WebArena / Mind2Web bench-suite adapter                         | Optional; the harness contract is compatible                  |
 
 ---
 

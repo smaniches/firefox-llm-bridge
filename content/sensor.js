@@ -98,6 +98,29 @@
     range: "slider",
   };
 
+  /**
+   * Treat password fields and one-time-code inputs as sensitive. Their `value`
+   * never enters the accessibility map sent to the LLM, even partially —
+   * passwords, OTPs, and "new-password" autofill values would otherwise leak
+   * to whichever provider the user has chosen.
+   *
+   * Recognises:
+   *   - <input type="password">
+   *   - autocomplete="current-password" | "new-password" | "one-time-code"
+   *   - data-sensitive="true" / data-sensitive (any non-empty value)
+   *
+   * Site authors that mark fields with `autocomplete` per WHATWG get the
+   * protection automatically; sites that don't can opt in via data-sensitive.
+   */
+  function isSensitiveInput(node) {
+    if (node?.tagName === "INPUT" && node.type === "password") return true;
+    const ac = (node?.getAttribute?.("autocomplete") || "").toLowerCase().trim();
+    if (ac === "current-password" || ac === "new-password" || ac === "one-time-code") return true;
+    const ds = node?.getAttribute?.("data-sensitive");
+    if (typeof ds === "string" && ds.length > 0) return true;
+    return false;
+  }
+
   function inferRole(node) {
     const ariaRole = node.getAttribute("role");
     if (ariaRole && INTERACTIVE_ROLES.has(ariaRole)) return ariaRole;
@@ -157,6 +180,7 @@
     }
 
     if (node.value && (node.tagName === "INPUT" || node.tagName === "TEXTAREA")) {
+      if (isSensitiveInput(node)) return `[value: <redacted>]`;
       return `[value: ${node.value.substring(0, 100)}]`;
     }
     if (node.placeholder) return `[placeholder: ${node.placeholder}]`;
@@ -244,7 +268,10 @@
         entry.checked = node.checked || node.getAttribute("aria-checked") === "true";
       }
       if (role === "textbox" || role === "searchbox" || role === "spinbutton") {
-        entry.value = (node.value || "").substring(0, 200);
+        // Sensitive inputs (password, current/new-password autocomplete) are
+        // never serialised — even a partial value can be enough to compromise
+        // a user. The model still sees the field exists via the entry itself.
+        entry.value = isSensitiveInput(node) ? "<redacted>" : (node.value || "").substring(0, 200);
       }
       if (role === "link" && node.href) {
         entry.href = node.href.substring(0, 300);

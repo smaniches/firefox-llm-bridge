@@ -44,6 +44,15 @@ export const DESTRUCTIVE_TOOLS = Object.freeze(
     "upload_file",
     "download_file",
     "switch_tab",
+    // Arbitrary JS execution in the page — the most powerful capability the
+    // model has. A prompt-injected page that hijacks the agent can otherwise
+    // read DOM cookies, sessionStorage, or local form values without the
+    // user seeing it first.
+    "execute_script",
+    // `set_value` bypasses keyboard simulation and writes directly to a
+    // framework-controlled input. Treat as destructive for the same reason
+    // as type_text.
+    "set_value",
   ]),
 );
 

@@ -149,6 +149,8 @@ A GitHub Actions workflow (`.github/workflows/ci.yml`) runs these on every push 
 
 ## Source Layout
 
+Approximate line counts as of v0.6.0 (run `wc -l` in the repo to verify):
+
 ```
 manifest.json
 LICENSE            Apache-2.0
@@ -159,31 +161,68 @@ PRIVACY.md
 SECURITY.md
 CONTRIBUTING.md
 CODE_OF_CONDUCT.md
+CITATION.cff
+
 background/
-  background.js          313 lines — agent loop, port handler
+  background.js          ~1500 lines — agent loop, sidebar port, tool dispatcher
   providers/
-    index.js             133 lines — router
-    anthropic.js          96 lines
-    openai.js            206 lines
-    google.js            219 lines
-    ollama.js            248 lines
+    index.js              ~180 lines — provider router
+    anthropic.js          ~330 lines — Messages API + SSE stream + caching
+    openai.js             ~330 lines — Chat Completions + SSE stream
+    google.js             ~340 lines — Gemini generateContent + streamGenerateContent
+    ollama.js             ~370 lines — local OpenAI-compatible + NDJSON stream
+  lib/
+    http.js               ~190 lines — fetchWithRetry, timeouts, signal composition
+    errors.js             ~140 lines — typed error hierarchy + HTTP-status classifier
+    stream.js             ~140 lines — SSE + NDJSON parsers used by providers
+    pricing.js            ~110 lines — model pricing table + cost computation
+    policy.js             ~220 lines — domain allow/blocklist, preview gate, injection scan
+    vision.js              ~35 lines — image data-URL parsing for vision payloads
+    log.js                ~160 lines — namespaced ring-buffered logger (off by default)
+
 content/
-  sensor.js              470 lines — accessibility map + DOM actions
+  sensor.js              ~750 lines — accessibility map + DOM actions
+
 sidebar/
-  sidebar.html, .css, .js — chat/agent UI
+  sidebar.html, .css, .js — chat/agent UI; sidebar.js wires the port + render loop
+  utils.js               — pure render helpers (markdown, summarize, tool icons)
+
 options/
-  options.html, .css, .js — provider configuration
+  options.html, .css, .js — provider configuration + safety policy + debug toggle
+
 _locales/
-  en/messages.json       i18n strings
+  en/messages.json       i18n strings (full UI wiring tracked in ROADMAP)
+
 icons/
   icon-{16,32,48,128}.png
+
 docs/
   ARCHITECTURE.md
   PROVIDERS.md
   THREAT_MODEL.md
   AMO_REVIEW.md          (this file)
+  ROADMAP.md
+  BENCHMARKING.md
+  AUDIT_2026-05.md
+  adr/                   Architecture Decision Records
+
 tests/
-  ...                   Vitest unit + integration tests
+  setup.js               browser + fetch mocks
+  background/            agent loop, tool dispatcher
+  content/               sensor + actor
+  sidebar/               UI controller + utils
+  options/               provider configuration
+  providers/             one file per provider
+  lib/                   http, errors, stream, pricing, policy, vision, log
+  privacy-regression.test.js   greps shipped source for telemetry / remote code
+  manifest-consistency.test.js version + script contract
+  bench.test.js          bench-harness schema + baseline drift guard
+  e2e/                   Playwright + web-ext (opt-in)
+
+bench/
+  runner.js, launch.js   benchmark harness (Apache-2.0 fixtures only)
+  tasks/<id>/            self-contained task fixture (HTML + JSON)
+  baselines/dry.json     locked dry-run output for CI drift detection
 ```
 
 ## Contact for Reviewer Questions

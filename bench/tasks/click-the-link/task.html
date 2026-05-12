@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Click the link</title>
+  </head>
+  <body>
+    <h1>Welcome</h1>
+    <p>Find the documentation entry below and click it.</p>
+    <ul>
+      <li><a id="home" href="#home">Home</a></li>
+      <li><a id="about" href="#about">About</a></li>
+      <li><a id="docs" href="#docs">Documentation</a></li>
+      <li><a id="contact" href="#contact">Contact</a></li>
+    </ul>
+    <p id="status">unclicked</p>
+    <script>
+      document.querySelectorAll("a").forEach((a) => {
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          document.getElementById("status").textContent = "clicked:" + a.id;
+        });
+      });
+    </script>
+  </body>
+</html>

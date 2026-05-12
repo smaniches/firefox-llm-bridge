@@ -17,6 +17,7 @@ async function load() {
     "providers",
     "maxTurns",
     "safetyPolicy",
+    "debugLogging",
   ]);
   activeProvider = stored.activeProvider || null;
   const providers = stored.providers || {};
@@ -31,6 +32,7 @@ async function load() {
   if (providers.google?.key) el("google-key").value = providers.google.key;
   if (providers.google?.model) el("google-model").value = providers.google.model;
   if (stored.maxTurns) el("max-turns").value = stored.maxTurns;
+  el("debug-logging").checked = !!stored.debugLogging;
 
   // Restore safety policy. The policy module's mergePolicy handles defaults,
   // but here we only need to populate the form fields; the live agent always
@@ -303,7 +305,10 @@ el("safety-save").addEventListener("click", async () => {
     setStatus("safety-status", "Must be 1-100.", "error");
     return;
   }
-  await browser.storage.local.set({ maxTurns });
+  await browser.storage.local.set({
+    maxTurns,
+    debugLogging: !!el("debug-logging").checked,
+  });
   setStatus("safety-status", "Saved.", "success");
 });
 

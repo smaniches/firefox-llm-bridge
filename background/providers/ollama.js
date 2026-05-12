@@ -13,6 +13,8 @@
 
 import { readNDJSON } from "../lib/stream.js";
 import { normalizeUsage } from "../lib/pricing.js";
+import { fetchWithRetry } from "../lib/http.js";
+import { fromHttpStatus } from "../lib/errors.js";
 
 export const ollama = {
   id: "ollama",
@@ -188,26 +190,52 @@ export const ollama = {
       body.tools = this.formatTools(tools);
     }
 
-    let response;
-    try {
-      response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal,
-      });
-    } catch (e) {
-      if (e.name === "AbortError") throw e;
-      throw new Error(
-        "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) " +
-          "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
-          `Tried: ${url}`,
-      );
-    }
+    const init = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    };
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Ollama ${response.status}: ${errorBody.substring(0, 200)}`);
+    // Ollama is local; retries are still useful when the daemon is mid-restart
+    // or a model is still loading. Streaming bypasses retry for the same
+    // reason as the cloud providers.
+    let response;
+    if (stream) {
+      try {
+        response = await fetch(url, { ...init, signal });
+      } catch (e) {
+        if (e.name === "AbortError") throw e;
+        throw new Error(
+          "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) " +
+            "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
+            `Tried: ${url}`,
+        );
+      }
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw fromHttpStatus("ollama", response.status, errorBody, response.headers);
+      }
+    } else {
+      try {
+        response = await fetchWithRetry(url, init, { providerId: "ollama", signal });
+      } catch (e) {
+        if (e?.name === "AbortError" || e?.code === "AUTH_REJECTED" || e?.code === "RATE_LIMITED") {
+          throw e;
+        }
+        if (e?.code === "NETWORK") {
+          // Surface the operator-friendly CORS hint for the most common
+          // local-setup mistake, while keeping the original typed error
+          // available as `.cause` for the structured logger.
+          const helpful = new Error(
+            "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) " +
+              "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
+              `Tried: ${url}`,
+          );
+          helpful.cause = e;
+          throw helpful;
+        }
+        throw e;
+      }
     }
 
     if (!stream) {

@@ -24,6 +24,8 @@
 import { parseDataUrl } from "../lib/vision.js";
 import { readSSE } from "../lib/stream.js";
 import { normalizeUsage } from "../lib/pricing.js";
+import { fetchWithRetry } from "../lib/http.js";
+import { fromHttpStatus, NetworkError } from "../lib/errors.js";
 
 export const anthropic = {
   id: "anthropic",
@@ -147,7 +149,7 @@ export const anthropic = {
       body.max_tokens = Math.max(body.max_tokens, budget + 1000);
     }
 
-    const response = await fetch(this.endpoint, {
+    const init = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -157,12 +159,33 @@ export const anthropic = {
         "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify(body),
-      signal,
-    });
+    };
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Anthropic API ${response.status}: ${text.substring(0, 200)}`);
+    // Streaming responses cannot be safely retried mid-stream (a 5xx after
+    // partial deltas would corrupt the assembled message). For streaming we
+    // call fetch directly and surface a typed error on failure; for the
+    // non-streaming path we let `fetchWithRetry` handle 429 / 5xx / transient
+    // network failures with exponential backoff and Retry-After honoring.
+    let response;
+    if (stream) {
+      try {
+        response = await fetch(this.endpoint, { ...init, signal });
+      } catch (e) {
+        if (e?.name === "AbortError") throw e;
+        throw new NetworkError(`Network error contacting anthropic: ${e?.message ?? e}`, {
+          cause: e,
+          providerId: "anthropic",
+        });
+      }
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        throw fromHttpStatus("anthropic", response.status, errBody, response.headers);
+      }
+    } else {
+      response = await fetchWithRetry(this.endpoint, init, {
+        providerId: "anthropic",
+        signal,
+      });
     }
 
     if (!stream) {
