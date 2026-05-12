@@ -14,7 +14,7 @@
 import { readNDJSON } from "../lib/stream.js";
 import { normalizeUsage } from "../lib/pricing.js";
 import { fetchWithRetry } from "../lib/http.js";
-import { fromHttpStatus } from "../lib/errors.js";
+import { fromHttpStatus, NetworkError } from "../lib/errors.js";
 
 export const ollama = {
   id: "ollama",
@@ -199,17 +199,24 @@ export const ollama = {
     // Ollama is local; retries are still useful when the daemon is mid-restart
     // or a model is still loading. Streaming bypasses retry for the same
     // reason as the cloud providers.
+    // Both the streaming and non-streaming paths surface the same
+    // operator-friendly "Cannot connect to Ollama" hint for the most common
+    // local-setup mistake (daemon down, missing CORS), but they wrap it in a
+    // typed `NetworkError` so the UI receives `code: "NETWORK"`,
+    // `retryable: true`, and `providerId: "ollama"` — letting the sidebar
+    // render the same error-code badge and Retry button as the cloud providers.
+    const helpfulMessage =
+      "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) " +
+      "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
+      `Tried: ${url}`;
+
     let response;
     if (stream) {
       try {
         response = await fetch(url, { ...init, signal });
       } catch (e) {
         if (e.name === "AbortError") throw e;
-        throw new Error(
-          "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) " +
-            "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
-            `Tried: ${url}`,
-        );
+        throw new NetworkError(helpfulMessage, { cause: e, providerId: "ollama" });
       }
       if (!response.ok) {
         const errorBody = await response.text().catch(() => "");
@@ -223,16 +230,12 @@ export const ollama = {
           throw e;
         }
         if (e?.code === "NETWORK") {
-          // Surface the operator-friendly CORS hint for the most common
-          // local-setup mistake, while keeping the original typed error
-          // available as `.cause` for the structured logger.
-          const helpful = new Error(
-            "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) " +
-              "and CORS is configured: OLLAMA_ORIGINS=moz-extension://* " +
-              `Tried: ${url}`,
-          );
-          helpful.cause = e;
-          throw helpful;
+          // Re-wrap the underlying NetworkError so the UI sees the
+          // user-friendly CORS hint as the message while keeping the typed
+          // metadata (`code`, `retryable`, `providerId`) intact for the
+          // sidebar's error-code badge and Retry button. The original error
+          // is preserved as `.cause` for the structured logger.
+          throw new NetworkError(helpfulMessage, { cause: e, providerId: "ollama" });
         }
         throw e;
       }
